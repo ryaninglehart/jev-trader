@@ -1,6 +1,6 @@
 {
   "name": "jev-trader",
-  "module": "src/index.ts",
+  "module": "src/research/engine.ts",
   "type": "module",
   "private": true,
   "license": "MIT",
@@ -14,10 +14,19 @@
     "@ai-sdk/typesafe-ai": "^3.0.0",
     "@kuru-labs/kuru-sdk": "^0.0.95",
     "ai": "^7.0.103",
+    "decimal.js": "^10.6.0",
     "ethers": "5"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun --watch run src/index.ts"
+    "start": "bun run scripts/paper.ts",
+    "paper": "bun run scripts/paper.ts",
+    "paper:replay": "bun run scripts/paper-replay.ts",
+    "paper:export": "bun run scripts/export-dataset.ts",
+    "backtest": "bun run scripts/backtest.ts",
+    "fixture": "bun run scripts/make-fixture.ts",
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.research.json",
+    "demo": "bun run src/index.ts",
+    "dev": "bun --watch run scripts/paper.ts"
   }
 }

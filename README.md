@@ -1,71 +1,70 @@
-# jev-trader
+# Jev Trader: research and paper-trading fork
 
-One decision every Monad block. A TypeSafe Jev model watches the Kuru MON-USDC order book and answers buy or sell every ~300 ms. Every block posts a real post-only limit order on that side, one tick inside the touch, replacing the last one. Fills happen when a taker hits it, so the bot earns the spread instead of paying it. A small server streams every block to the dashboard.
+A reproducible trading research foundation derived from [jarrodwatts/jev-trader](https://github.com/jarrodwatts/jev-trader), upstream commit `d6254bf`.
 
-## Run
+**Live trading is disabled.** This version adds backtesting, cost accounting and durable paper sessions. It does not establish a profitable strategy or implement a production live exchange adapter. Do not fund it for trading.
 
-    cp .env.example .env
-    bun install
-    bun run start
+## What changed
 
-With no `PRIVATE_KEY` it dry-runs: real book, real decisions, simulated fills. Set `MODEL=jev` and `TYPESAFE_AI_API_KEY` to use Jev; the default `mock` is a momentum heuristic stand-in.
+- One deterministic engine powers historical replay and paper trading.
+- Decimal accounting includes quote-asset maker fees/rebates, gas for placements/cancellations/reverts, AI charges even on held or late decisions, and end-of-window gas provisions.
+- Quotes activate after a configurable delay. Existing orders consume the current block's prints before cancellation settles; new quotes cannot fill on those prints. Exact-touch fills wait behind displayed queue depth.
+- Post-only crossing, cancellation/fill races, partial fills, spot balances, pending exposure, inventory caps, quote TTL, loss stops and drawdown stops are modeled.
+- A chronological development/test split selects a momentum confidence threshold using development results only. Reports include hold/maker baselines and doubled gas/latency/queue sensitivity checks.
+- Paper sessions persist inputs before applying them and rebuild their complete state on restart. Concurrent writers, configuration changes, broken block continuity, duplicate trade logs and truncated journals fail closed.
+- The recorder reads finalized block-pinned books, block hashes and trade logs. It never signs or submits trades.
 
-## Endpoints
+## Quick start: offline verification
 
-Deployed (dry run, mock model): https://jev-trader-production.up.railway.app
+Requires Bun 1.4.3 or later. No wallet or API key is needed.
 
-- `GET /` snapshot: model, wallet, dryRun, latest block event
-- `GET /history` last 1000 block events
-- `GET /events` SSE: `snapshot` on connect, then one `block` event per block, a `quote` event when a live order's receipt lands, a `fill` event when a taker hits a resting order, and a `ping` every 15 s
+```sh
+bun install --frozen-lockfile
+bun run typecheck
+bun test tests
+bun run backtest --input fixtures/synthetic.jsonl --out data/example-backtest.json
+bun run paper:replay --input fixtures/synthetic.jsonl --state data/example-paper.jsonl --out data/example-paper-report.json
+# Repeat the same replay command: saved frames are verified and never applied twice.
+```
 
-Every event (see `src/trader.ts` for types):
+`fixtures/synthetic.jsonl` is artificial software-test data. Its returns are not market evidence. Regenerate it with `bun run fixture`.
 
-    {
-      "block": 105488269, "ts": 1789593630676,
-      "mid": 0.022636, "bestBid": 0.022628, "bestAsk": 0.022644, "spreadBps": 7.07,
-      "decision": { "action": "buy", "probabilities": { "buy": 0.77, "sell": 0.23, "hold": 0 }, "upIn10": 0.77, "latencyMs": 81, "late": false },
-      "quote": { "side": "buy", "price": 0.022629, "size": 200, "txHash": "0x…", "gasMon": 0.0357, "cancel": [100295801], "status": "sent", "orderId": null, "capped": false },
-      "fill": null,
-      "resting": { "bidMon": 200, "askMon": 200 },
-      "position": { "side": "short", "size": 200, "entryPrice": 0.022633, "unrealizedUsd": -0.0006, "unrealizedMon": -0.027 },
-      "totals": { "blocks": 3, "decisions": 3, "quotes": 3, "fills": 1, "reverted": 0, "lateBlocks": 0, "jevUsd": 0.000004, "gasMon": 0.107, "gasUsd": 0.0024, "realizedUsd": 0, "pnlUsd": -0.003, "pnlMon": -0.13, "pnlPct": -0.003 }
-    }
+## Record a market and paper trade
 
-Every block the model is asked about the move over `HORIZON_BLOCKS` (default 100, ~30 s) and answers `buy` or `sell`. `quote` is the order that block put on the book: a post-only limit order of `TRADE_SIZE_MON` on that side, `QUOTE_INSIDE_TICKS` inside the touch (clamped to the touch when the spread is too tight), in one `batchUpdate` that also cancels everything we had resting (`cancel`). `hold` appears only with `decision.late: true`, when the model missed the block and nothing was posted. When the position cap (or, live, margin funds) blocks a side, the quote goes on the other side with `capped: true` and `probabilities` still show the model's call. `resting` is our size known to be on the book after this block. `upIn10` equals the buy probability.
+```sh
+cp .env.example .env
+# Keep DRY_RUN=true. Configure RPC_URL and READ_RPC_URL if needed.
+# Review the cost and risk assumptions in research.example.json first.
+bun run paper --config research.example.json --state data/mon-paper.jsonl --blocks 1000 --out data/mon-paper-report.json
+bun run paper:export --state data/mon-paper.jsonl --out data/mon-market.jsonl
+bun run backtest --input data/mon-market.jsonl --config research.example.json --out data/mon-backtest.json
+```
 
-Live sends are fired and forgotten, so the `block` event carries the **intent**: `status: "sent"`, `gasMon` is `gasLimit x (last known base fee + priority)`. Monad charges the gas limit, so that is the real cost whether the order lands or not. The receipt arrives a block or two later as its own SSE event:
+The example's `makerFeeBps: "0"`, gas limit and AI price are **assumptions**, not verified current exchange pricing. The collector records each block's base fee plus the configured priority fee; gas limit, maker fees and execution delays remain simulation inputs. Existing dataset headers control backtest costs; the config file supplies strategy/risk settings. Edit the dataset header deliberately to run a different fee scenario.
 
-    event: quote
-    data: { "block": 105488269, "quote": { …, "status": "placed", "orderId": 100295812, "gasMon": 0.0357 } }
+Only finalized blocks are used. On restart the collector backfills every missing block and checks parent hashes, rather than skipping to the latest price. This is suitable for research; it does not measure a live low-latency strategy. Historical book reads must be supported by the RPC. Missing finalized support, missing historical state, incomplete logs or a stalled feed stop the process. There is no fallback to unfinalized snapshots.
 
-`status` becomes `placed` (with the order id) or `reverted` (the book moved through the price before the tx landed, or a cancelled order had already filled). No receipt after 10 blocks gives `lost`. Fills are not in our own transactions: someone else's taker order hits our resting one, and the Trade log for it arrives via the same `eth_getLogs` poll that feeds the model. Each block with fills gets its own SSE event, and `position`, `realizedUsd` and `fills` update then:
+`Ctrl-C` stops between observations and releases the journal lock. After a process crash, first verify that no writer is running, then remove the stale `<state>.lock` and rerun with the same configuration. A partial last line is rejected: preserve the original and recover only the complete newline-terminated prefix into a new file. Never edit financial state to force a restart.
 
-    event: fill
-    data: { "block": 105488271, "fill": { "side": "buy", "size": 200, "price": 0.022629, "txHash": "0x…", "orderId": 100295812, "simulated": false } }
+## Strategies and AI
 
-`txHash` is the taker's transaction. In a dry run the quote is `status: "sim"`: the order rests for one block and a real print crossing its price fills it (`simulated: true`).
+- `momentum`: transparent momentum/book/flow heuristic with a confidence threshold. These scores are not calibrated probabilities.
+- `maker`: inventory-directed one-sided quoting baseline.
+- `hold`: retain the initial portfolio without orders.
+- `recorded`: replay previously recorded causal model decisions, including their latency and actual USD charge (or the header's per-decision assumption if no charge is supplied).
 
-## Layout
+The new market collector supports the deterministic strategies. It does not call Jev. To evaluate Jev, first obtain a dataset with decisions recorded after each observation, without future labels, and use `recorded` in the engine settings. Missing decisions fail validation. Training a model, proving its prediction quality and connecting an online AI inference adapter are separate work.
 
-    src/config.ts   env
-    src/chain.ts    block feed (WebSocket newHeads + polling backstop, newest block only), raw RPC
-    src/book.ts     one-eth_call order book reader (decodes getL2Book, merges the AMM vault)
-    src/market.ts   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation
-    src/model.ts    Model interface, JevModel (AI SDK experimental_evaluate), MockModel
-    src/trades.ts   Trade log feed (eth_getLogs): taker prints, our maker fills, CVD summary
-    src/trader.ts   the loop: one in flight, hold when late, position and P&L accounting
-    src/server.ts   Bun.serve: snapshot, history, SSE
+The original UI is retained under `web/` and `bun run demo` for reference. It uses the upstream demo simulator, not the research engine or its reports. Live execution is also blocked there. Use the research reports to assess this fork's costs and performance.
 
-## The 300 ms budget
+## Reading results
 
-A decision and an order have to fit in one block, so the hot loop makes exactly two RPC round trips:
-one `eth_call` for the book (~18 ms on the public RPC, `READ_RPC_URL`) and one `eth_sendRawTransaction`
-(`RPC_URL`), which returns as soon as the tx is accepted. Nothing else is on the path — no
-`eth_estimateGas` (Monad charges gas on the limit, so the limit is hardcoded or derived once at
-startup), no `eth_sendRawTransactionSync` (it blocks until the tx is Proposed), no gas price lookup
-(static type-2 fees: `MAX_FEE_GWEI` cap, 2 gwei priority; the effective price is base + priority).
-Receipts, the fee estimate and the vault check run off the hot path on later blocks. Measured in a
-dry run with the mock model: read p50 18 ms, whole loop p50 100 ms (80 ms of it the mock's inference stand-in).
+`netPnlUsd = grossPnlUsd - costs.totalUsd`. Net P&L includes maker fees, historical gas conversion, AI charges and estimated gas reserves for unresolved inclusion and terminal cancellation. `settledNetPnlUsd` excludes those final provisions. Cash plus inventory marked to mid, less reserves, reconciles to initial equity plus net P&L. Maker fees may be negative for a configured rebate.
 
-    bun run scripts/bench-read.ts     # book reader vs the SDK: exactness and latency
-    bun run scripts/dry-encode.ts     # signs a buy and a sell offline, asserts the calldata matches the SDK
+Open inventory is **marked to mid, not liquidated**. Exit fees, price impact and proceeds from liquidating it are not simulated. `maxDrawdownPct` includes the terminal reserve adjustment. Never compare an unliquidated report directly with fully liquidated real account returns.
+
+The initial MON position is funded capital valued at the first observed mid. Simulated gas is purchased at each inclusion block's MON mid and charged against USD cash; this is an explicit reporting convention, not a representation of a real gas-wallet balance. No borrowing or short selling is modeled.
+
+Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
+
+See [the research specification](SPEC.md) and [accounting and execution details](docs/METHODOLOGY.md) for limits and the live-enablement work still required.

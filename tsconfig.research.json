@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/research", "tests", "scripts/backtest.ts", "scripts/research-args.ts", "scripts/paper.ts", "scripts/paper-replay.ts", "scripts/export-dataset.ts", "scripts/make-fixture.ts"]
+}

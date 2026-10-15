@@ -52,12 +52,6 @@ export interface Fill {
 
 export interface QuoteResult { block: number; quote: Quote; canceled: number[] }
 
-const ERC20_ABI = [
-  "function allowance(address,address) view returns (uint256)",
-  "function approve(address,uint256) returns (bool)",
-  "function balanceOf(address) view returns (uint256)",
-];
-
 const gwei = (n: number) => ethers.utils.parseUnits(String(n), "gwei");
 const BN = ethers.BigNumber;
 const ZERO_ADDRESS = ethers.constants.AddressZero;
@@ -86,12 +80,9 @@ export class Market {
   private get tickUnits() { return Number(this.params.tickSize.toString()); }
 
   async init() {
+    if (this.wallet) throw new Error("Live execution is disabled in this research fork. Use DRY_RUN=true. Reconciliation and live fee settlement must be implemented before enabling funds.");
     this.params = await Kuru.ParamFetcher.getMarketParams(this.provider, config.market);
     await this.refresh();
-    if (!this.wallet) return;
-    await this.resyncNonce();
-    await this.ensureMargin();
-    await this.initGasLimit();
   }
 
   /** Every `config.refreshBlocks`: fee estimate, margin balances, and whether the Kuru AMM vault went live. */
@@ -129,26 +120,12 @@ export class Market {
   }
 
   /**
-   * Sign and fire one `batchUpdate`: cancel the given resting orders, post one new post-only limit
-   * order. Returns as soon as the RPC has the hash. `pollPending` resolves placed/reverted later.
+   * Legacy demo simulation only. Live submission is disabled in this fork.
    */
   async send(block: number, side: Side, sizeMon: number, book: Book, cancel: number[], capped: boolean): Promise<Quote> {
     const price = this.quotePrice(side, book);
-    if (!this.wallet) return { side, price, size: sizeMon, txHash: null, gasMon: 0, cancel, status: "sim", orderId: null, capped };
-
-    const tx = this.buildTx(side, sizeMon, price, cancel);
-    const signed = await this.wallet.signTransaction(tx);
-    let hash: string;
-    try {
-      hash = await rpc<string>("eth_sendRawTransaction", [signed]);
-      this.nonce++;
-    } catch (e) {
-      await this.resyncNonce().catch(() => {});
-      throw e;
-    }
-    const quote: Quote = { side, price, size: sizeMon, txHash: hash, gasMon: this.gasMon(this.gasLimit, this.feeWei), cancel, status: "sent", orderId: null, capped };
-    this.pending.set(hash, { block, quote, gasLimit: this.gasLimit });
-    return quote;
+    if (this.wallet) throw new Error("Live order submission is disabled in this research fork");
+    return { side, price, size: sizeMon, txHash: null, gasMon: 0, cancel, status: "sim", orderId: null, capped };
   }
 
   /** One eth_getTransactionReceipt per in-flight tx. Returns whatever resolved (or timed out). */
@@ -207,68 +184,10 @@ export class Market {
     return { block: p.block, quote: { ...p.quote, status, orderId, gasMon }, canceled };
   }
 
-  /** Top the margin account up to MARGIN_MON / MARGIN_USDC. Runs once at startup, awaiting each receipt. */
-  private async ensureMargin() {
-    const w = this.wallet!;
-    const baseDec = this.params.baseAssetDecimals.toNumber(), quoteDec = this.params.quoteAssetDecimals.toNumber();
-    const [monBal, usdcBal] = await Promise.all([this.marginBalance(ZERO_ADDRESS), this.marginBalance(this.params.quoteAssetAddress)]);
-    const mon = Number(ethers.utils.formatUnits(monBal, baseDec)), usdc = Number(ethers.utils.formatUnits(usdcBal, quoteDec));
-    const deposit = async (token: string, amount: ethers.BigNumber, native: boolean) => {
-      const tx = await w.sendTransaction({
-        to: config.marginAccount, nonce: this.nonce++, value: native ? amount : BN.from(0),
-        data: this.marginIface.encodeFunctionData("deposit", [w.address, token, amount]),
-      });
-      await tx.wait(1);
-    };
-    if (mon < config.marginMon) {
-      const amt = ethers.utils.parseUnits((config.marginMon - mon).toFixed(6), baseDec);
-      console.log(`margin: depositing ${ethers.utils.formatUnits(amt, baseDec)} MON`);
-      await deposit(ZERO_ADDRESS, amt, true);
-    }
-    if (usdc < config.marginUsdc) {
-      const token = new ethers.Contract(this.params.quoteAssetAddress, ERC20_ABI, w);
-      const amt = ethers.utils.parseUnits((config.marginUsdc - usdc).toFixed(quoteDec), quoteDec);
-      const have: ethers.BigNumber = await token.balanceOf(w.address);
-      if (have.lt(amt)) {
-        console.warn(`margin: wallet has ${ethers.utils.formatUnits(have, quoteDec)} USDC, wanted to deposit ${ethers.utils.formatUnits(amt, quoteDec)}; depositing what is there`);
-      }
-      const dep = have.lt(amt) ? have : amt;
-      if (dep.gt(0)) {
-        const allowance: ethers.BigNumber = await token.allowance(w.address, config.marginAccount);
-        if (allowance.lt(dep)) { const tx = await token.approve(config.marginAccount, ethers.constants.MaxUint256, { nonce: this.nonce++ }); await tx.wait(1); }
-        console.log(`margin: depositing ${ethers.utils.formatUnits(dep, quoteDec)} USDC`);
-        await deposit(this.params.quoteAssetAddress, dep, false);
-      }
-    }
-    await this.refresh();
-    console.log(`margin · ${this.margin.mon.toFixed(2)} MON · ${this.margin.usdc.toFixed(2)} USDC`);
-  }
-
   private async marginBalance(token: string): Promise<ethers.BigNumber> {
     const data = this.marginIface.encodeFunctionData("getBalance", [this.wallet!.address, token]);
     const res = await rpc<string>("eth_call", [{ to: config.marginAccount, data }, "latest"], config.readRpcUrl);
     return BN.from(res);
-  }
-
-  /**
-   * One eth_estimateGas at startup for a post-only place with no cancels, plus headroom for the one
-   * or two cancels a normal block carries, x1.15. Never in the hot loop. Needs margin funds to succeed.
-   */
-  private async initGasLimit() {
-    if (config.gasLimit) { this.gasLimit = BN.from(config.gasLimit); }
-    else {
-      try {
-        const book = await this.readBook();
-        const side: Side = this.margin.usdc >= config.tradeSizeMon * book.ask ? "buy" : "sell";
-        const data = this.encode(side, config.tradeSizeMon, this.quotePrice(side, book), []);
-        const est = await this.provider.estimateGas({ to: config.market, from: this.wallet!.address, data });
-        this.gasLimit = est.add(90_000).mul(115).div(100);
-      } catch (e) {
-        console.warn(`gas estimate failed (${(e as Error).message.slice(0, 120)}); using ${config.gasLimitFallback}`);
-      }
-    }
-    const perBlock = this.gasMon(this.gasLimit, this.feeWei);
-    console.log(`gas limit ${this.gasLimit} · maxFee ${config.maxFeeGwei} gwei · priority ${config.priorityFeeGwei} gwei · ~${perBlock.toFixed(4)} MON per block, ~${(perBlock * 12_000).toFixed(0)} MON per hour`);
   }
 
   private gasMon(limit: ethers.BigNumber, feeWei: ethers.BigNumber) {
