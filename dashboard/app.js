@@ -25,9 +25,11 @@ function acceptData(data) {
   candidate.runs.forEach((run) => validateReport(run.report));
   if (candidate.multiday && (candidate.multiday.schema !== "edgefoundry-multiday-v1" || candidate.multiday.liveTradingEnabled !== false || !Array.isArray(candidate.multiday.arms))) throw new Error("Invalid multi-day study.");
   if (candidate.selective && (candidate.selective.schema !== "edgefoundry-selective-cloud-v1" || candidate.selective.liveTradingEnabled !== false || candidate.selective.study?.schema !== "edgefoundry-selective-forward-v1" || candidate.selective.study.liveTradingEnabled !== false || !Array.isArray(candidate.selective.study.arms))) throw new Error("Invalid separate paper comparison.");
+  if (candidate.swing && (candidate.swing.schema !== "edgefoundry-swing-backtest-v1" || candidate.swing.liveTradingEnabled !== false || !Array.isArray(candidate.swing.variants) || candidate.swing.variants.some(v => v.liveTradingEnabled !== false))) throw new Error("Invalid offline swing backtest.");
   bundle = candidate;
   renderMultiDay(candidate.multiday);
   renderSelective(candidate.selective);
+  renderSwing(candidate.swing);
   $("runSelect").innerHTML = candidate.runs.map((run, i) => `<option value="${i}">${esc(run.label || `Recording ${i + 1}`)}</option>`).join("");
   $("runSelect").value = String(candidate.runs.length - 1);
   $("downloadButton").disabled = false; $("workspace").hidden = false; $("empty").hidden = true;
@@ -182,4 +184,16 @@ function renderSelective(data) {
   $("selectiveFilters").textContent = c ? `Selective Entry filters: ${number(c.filterCounts.insufficient_queue_flow)} queue-flow holds · ${number(c.filterCounts.signal_persistence)} persistence holds · ${number(c.filterCounts.entry_cooldown)} cooldown holds. Gas per filled order including terminal gas reserves: ${c.gasPerFilledOrderUsd === null ? "unavailable — no filled orders" : money(c.gasPerFilledOrderUsd)}. No profitable edge is established by these early observations.` : "The candidate's queue, persistence and cooldown counters will appear with its first market observations.";
   $("selectiveFreshness").textContent = `Cloud report saved ${new Date(data.updatedAt).toLocaleString()}. This is a published snapshot, not a live connection. Input delivery normally trails the original collector by about 15 minutes; dashboard publication adds further delay. Source checkpoint ${data.sourceSequence}; comparison checkpoint ${data.checkpointSequence ?? "pending"}.`;
   $("selectiveEvidence").textContent = `${s.methodology} Frozen comparison source: ${s.codeDigest}.`;
+}
+
+function renderSwing(s) {
+  $("swing").hidden = !s; if (!s) return;
+  $("swingStatus").textContent = s.model.qualified ? "RETROSPECTIVE RESULT · UNVALIDATED" : "INSUFFICIENT TRAINING EVIDENCE";
+  $("swingTiming").textContent = `${number(s.dataset.frames)} consecutive recorded blocks · ${number(s.dataset.durationHours, 2)} hours · ${new Date(s.dataset.firstAt).toLocaleString()} – ${new Date(s.dataset.lastAt).toLocaleString()}. Offline only; both cloud tests are unchanged.`;
+  $("swingMetrics").innerHTML = row("Mature training examples / required", `${number(s.model.samples)} / ${s.policy.minimumTrainingSamples}`) + row("Chronological train / evaluation", "First 60% / later 40% · no refitting") + row("Directional estimate qualified?", s.model.qualified ? "Eligible for retrospective evaluation" : "No · zero credited edge") + row("Unchanged portfolio limits", "$1 loss · 1% drawdown · 400 MON cap");
+  $("swingConclusion").textContent = s.conclusion + " No cloud deployment, live orders or automatic promotion.";
+  $("swingRows").innerHTML = s.variants.map(v => `<tr><td>${v.id === "swing-standard" ? "Standard costs / displayed depth" : "Double gas / half displayed depth"}</td><td>${v.netAfterExitUsd === null ? "Unresolved exit" : money(v.netAfterExitUsd)}</td><td>${money(v.costs.totalSettledUsd)} / ${number(v.entryAttempts)}</td><td>${number(v.fills)} / ${number(v.roundTrips)}</td><td>${pct(v.maxDrawdownPct)} / ${number(v.inventoryMon, 4)} MON<span class="row-meta">${esc(v.halted || "No risk halt")}</span></td></tr>`).join("") + `<tr><td>Hold cash · same evaluation window</td><td>${money(s.holdCashNetUsd)}</td><td>$0.0000 / 0</td><td>0 / 0</td><td>0.00% / 0 MON</td></tr>`;
+  const moves=s.model.samplesDetail.map(x => `${(n(x.moveBps)/100).toFixed(2)}%`).join(", ");
+  $("swingEvidence").textContent = `Training labels finish before ${new Date(s.split.trainingEnd).toLocaleString()}. Evaluation ends ${new Date(s.split.evaluationEnd).toLocaleString()}. ${s.model.samples ? `Training two-hour midpoint moves: ${moves}. These are training labels, not executed-trade returns.` : "No complete matching training labels."} Zero trades does not establish profitability or improved fills.`;
+  $("swingMethodology").textContent = `${s.methodology} Input digest: ${s.dataset.inputDigest}. Candidate source: ${s.sourceDigest}.`;
 }

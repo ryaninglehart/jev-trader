@@ -17,6 +17,7 @@
     "scripts/cloud-study.ts",
     "scripts/compare-selective.ts",
     "scripts/selective-cloud.ts",
-    "scripts/audit-selective.ts"
+    "scripts/audit-selective.ts",
+    "scripts/backtest-swing.ts"
   ]
 }
