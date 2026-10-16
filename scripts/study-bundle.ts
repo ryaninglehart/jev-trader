@@ -1,0 +1,14 @@
+import { readFileSync } from "node:fs";
+import { args, output, protectOutput } from "./research-args";
+import { invariant } from "../src/research/validation";
+const a = args(["base", "study", "selective", "swing", "out"]);
+invariant(a.base && a.study && a.out, "usage: bun run scripts/study-bundle.ts --base earlier-dashboard.json --study study.json --out dashboard.json");
+protectOutput(a.out, [a.base, a.study, a.selective, a.swing]);
+const base = JSON.parse(readFileSync(a.base, "utf8")), study = JSON.parse(readFileSync(a.study, "utf8"));
+invariant(base.schema === "edgefoundry-dashboard-v1" && study.schema === "edgefoundry-multiday-v1" && study.liveTradingEnabled === false, "invalid dashboard inputs");
+delete study.processId;
+const selective = a.selective ? JSON.parse(readFileSync(a.selective, "utf8")) : base.selective;
+if (selective) invariant(selective.schema === "edgefoundry-selective-cloud-v1" && selective.liveTradingEnabled === false && selective.study?.liveTradingEnabled === false, "invalid separate comparison");
+const swing = a.swing ? JSON.parse(readFileSync(a.swing, "utf8")) : base.swing;
+if (swing) invariant(swing.schema === "edgefoundry-swing-backtest-v1" && swing.liveTradingEnabled === false, "invalid offline swing backtest");
+output(a.out, { ...base, multiday: study, ...(selective ? { selective } : {}), ...(swing ? { swing } : {}) });

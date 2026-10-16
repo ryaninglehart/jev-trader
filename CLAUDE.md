@@ -110,16 +110,19 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 
-## The core message (do not break this)
+## Research fork scope
 
-The demo exists to support this tweet. Every design or strategy change must keep all four claims true:
+This fork replaces the upstream promotional demo goal with reproducible evaluation and safe paper trading. The user authorized changing the original every-block order requirement.
 
-> I built a trading bot with Jev!
->
-> Jev decides if it should "buy" or "sell", given the price feed of an asset pair, and executes real trades.
->
-> It uses Monad to place the orders on Kuru's on-chain order book in every 300ms block.
->
-> Demo link: https://jev-trader.vercel.app
+- Live execution is disabled. Do not re-enable it as a routine fix or bypass the guard for recording.
+- The shared engine in src/research drives paper trading and backtests. Keep its event order causal.
+- Decimal strings and decimal arithmetic are required for money and quantities.
+- All costs and fill/latency assumptions must appear in reports. Never present synthetic fixtures as historical returns.
+- Defaults allow hold, skip unnecessary replacements, enforce spot balances and risk stops, and fail closed on corrupt or incomplete data.
+- The upstream dashboard and trader remain a legacy demonstration, not the new accounting surface.
+- Run bun run typecheck and bun test tests, plus relevant CLI smoke checks, before publishing changes.
+- Jev keys belong only in local environment variables; never fall back to a mock in the research collector or label transport fixtures as real Jev output. Restore both paper and inference ledgers, and preserve final unapplied inference costs on export.
+- Live enablement requires a separately reviewed exchange adapter with startup reconciliation, idempotent receipt/fill handling, actual fee settlement, and independent cancellation controls.
 
-Non-negotiables: Jev makes the buy/sell call (not code), from the price feed; real trades from a real wallet; an order placed on Kuru's on-chain book every 300 ms block; the demo is the live dashboard. Never decide every N blocks. No middle dots, em dashes or en dashes in any rendered text. No blinking or pulsing indicators.
+- EdgeFoundry dashboard lives in dashboard/ and reads comparison reports; it must remain read-only. No order, wallet or live-enablement routes.
+- Economic gate assumptions must remain explicit; fill markouts are forward-only diagnostics, never future inputs to decisions.
