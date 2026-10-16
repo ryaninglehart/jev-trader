@@ -226,11 +226,16 @@ describe("evaluation", () => {
     expect(first.warning).toContain("SYNTHETIC");
   });
   test("live execution is rejected before any RPC or wallet funding", async () => {
-    const child = Bun.spawn([process.execPath, "-e", 'import {Market} from "./src/market"; await new Market().init();'], {
-      env: { ...process.env, DRY_RUN: "false", PRIVATE_KEY: "0x" + "11".repeat(32), RPC_URL: "http://127.0.0.1:1" }, timeout: 20_000, stdout: "pipe", stderr: "pipe",
+    const { Market } = await import("../src/market");
+    let touchedRpc = false;
+    const live = Object.create(Market.prototype) as InstanceType<typeof Market>;
+    Object.defineProperties(live, {
+      wallet: { value: {} },
+      provider: { get() { touchedRpc = true; throw new Error("RPC accessed before live guard"); } },
+      quotePrice: { value: () => 1 },
     });
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-    expect(exitCode).not.toBe(0);
-    expect(stderr).toContain("Live execution is disabled");
+    await expect(live.init()).rejects.toThrow("Live execution is disabled");
+    await expect(live.send(1, "buy", 200, {} as any, [], false)).rejects.toThrow("Live order submission is disabled");
+    expect(touchedRpc).toBe(false);
   }, 30_000);
 });
