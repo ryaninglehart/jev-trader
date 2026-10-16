@@ -16,6 +16,7 @@
     "scripts/study-bundle.ts",
     "scripts/cloud-study.ts",
     "scripts/compare-selective.ts",
-    "scripts/selective-cloud.ts"
+    "scripts/selective-cloud.ts",
+    "scripts/audit-selective.ts"
   ]
 }
