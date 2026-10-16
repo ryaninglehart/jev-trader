@@ -17,14 +17,14 @@ export class PaperSession {
   private lock: string;
   private closed = false;
 
-  constructor(readonly path: string, header: DatasetHeader, config: EngineConfig) {
+  constructor(readonly path: string, header: DatasetHeader, config: EngineConfig, externalLedger?: { kind: "jev"; path: string }) {
     this.lock = path + ".lock";
     mkdirSync(dirname(path), { recursive: true });
     const lockFd = openSync(this.lock, "wx", 0o600);
     writeSync(lockFd, `${process.pid}\n`); closeSync(lockFd);
     try {
       this.engine = new Engine(header, config);
-      const identity = { kind: "paper-session", version: 1, engineVersion: ENGINE_VERSION, header, config };
+      const identity = { kind: "paper-session", version: 1, engineVersion: ENGINE_VERSION, header, config, ...(externalLedger ? { externalLedger } : {}) };
       if (existsSync(path)) {
         const bytes = readFileSync(path, "utf8");
         invariant(bytes.endsWith("\n"), "incomplete journal; preserve it and recover to the last complete newline in a COPY");

@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { defaultConfig, type DatasetHeader, type EngineConfig } from "../src/research/types";
+import { defaultConfig, type DatasetHeader, type EngineConfig, type JevSettings } from "../src/research/types";
 import { validateConfig, validateHeader, invariant } from "../src/research/validation";
 
 export function args(allowed: string[]) {
@@ -16,10 +16,10 @@ export function args(allowed: string[]) {
 }
 
 export function settings(path: string) {
-  const s = JSON.parse(readFileSync(path, "utf8")) as { dataset: DatasetHeader; engine?: Partial<EngineConfig> };
+  const s = JSON.parse(readFileSync(path, "utf8")) as { dataset: DatasetHeader; engine?: Partial<EngineConfig>; jev?: JevSettings };
   const config = { ...defaultConfig, ...s.engine };
   validateHeader(s.dataset); validateConfig(config);
-  return { header: s.dataset, config };
+  return { header: s.dataset, config, jev: s.jev };
 }
 
 export function output(path: string | undefined, value: unknown) {

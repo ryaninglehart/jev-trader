@@ -56,3 +56,20 @@ The loss/drawdown stop prevents new quote intents, then requests cancellation. A
 Run `bun run typecheck`, `bun test tests` and the README's offline commands. The suite exercises exact accounting identities, partial fills and queue depletion, no same-observation fills, charged reverts, cancellation races, stale decisions, caps, loss halts, canonical continuity, restart equivalence, corrupted journals and held-out parameter selection.
 
 A short read-only smoke run also verified that the configured public Monad endpoint served finalized block-pinned books, base fees and trade logs at development time. That is an integration check, not a historical performance study or a guarantee of endpoint availability.
+
+
+## Online Jev availability and billing
+
+`research.jev.example.json` enables the real TypeSafe evaluation transport with buy/sell/hold criteria. No key produces an error, not a mock. Offline tests inject only the transport response while exercising the actual installed SDK request and response schema; they are not calls to Jev's service.
+
+The collector launches a request after journaling source frame N and keeps recording while the request is in flight. A reply becomes a decision on a later frame M, and its quote uses M's current book. `sourceBlock` is strictly earlier than `availableBlock`, which must equal the recording frame. Inference delay has already elapsed when the reply is available; only transaction latency is added afterward. Old or over-deadline responses cannot place a quote. Pending inference does not repeatedly cancel a still-valid quote, but TTL/risk/spread checks remain active. Catch-up frames do not initiate new inference calls.
+
+Each request has a durable start record with state hash, model/prompt/settings identity and source block. Completion records capture action, probabilities' selected confidence, latency, returned model ID and token usage. API keys, authorization headers, raw provider errors and raw prompts/state are not stored in this ledger. There are no request retries. Authentication failure stops subsequent calls; three failures also stop further calls. Estimated spending and request count survive restarts.
+
+Token-count times configured input/output rates is labeled `token_estimate`. It is not invoice reconciliation. Missing usage and failures use an explicit `unknown_reserve`; a timeout may still have been billed remotely. The rate assumptions and request reserve can underestimate a provider invoice. A local estimate limit cannot enforce the provider's billing cap. Requested and returned model IDs are recorded, but an opaque moving alias does not prove an immutable backend model revision.
+
+On restart, an unfinished request becomes a conservative recovered hold with its reserved cost and is not resent. A frame may apply each request ID only once. Both the paper and inference ledgers are required for recovery. Locks must not be removed until their writers are verified stopped.
+
+On shutdown, the inference runner is aborted and drained within the hard timeout. Any cost not applied to a market frame is included in the final report, including drawdown and the equity/net-cost identity. Export locks both ledgers and carries these remaining costs into `terminalInferenceLiability` on the dataset's last block. Replay charges that liability only for the recorded-model strategy and only for a window ending at that block. A development prefix therefore does not receive a future terminal charge; deterministic baselines do not pay for model calls. Unknown-cost provisions remain visibly identified in the original request ledger.
+
+`research-v2` changes asynchronous decision and accounting semantics. Older v1 journals are not resumed under v2. Export them using their original version and use the validated dataset for a new replay. Paper results remain assumptions about execution; no live wallet is reconciled or funded by this adapter.

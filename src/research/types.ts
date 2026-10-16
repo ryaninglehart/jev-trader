@@ -14,7 +14,13 @@ export interface Frame {
   trades: { id: string; side: Side; price: string; size: string }[];
   gasPriceWei?: string;
   /** A decision made AFTER this block's observation. Never use future labels here. */
-  decision?: { action: Side | "hold"; confidence: number; latencyMs: number; costUsd?: string };
+  decision?: {
+    action: Side | "hold"; confidence: number; latencyMs: number; costUsd?: string;
+    requestId?: string; sourceBlock?: number; availableBlock?: number;
+    status?: "ok" | "pending" | "stale" | "error" | "timeout" | "recovered" | "budget";
+    costBasis?: "token_estimate" | "unknown_reserve" | "none";
+    inputTokens?: number; outputTokens?: number; modelId?: string;
+  };
 }
 
 export interface DatasetHeader {
@@ -26,6 +32,8 @@ export interface DatasetHeader {
   chainId: number;
   blockMs: number;
   tickSize: string;
+  inference?: { provider: "typesafe-ai"; modelId: string; promptHash: string; settings: JevSettings };
+  terminalInferenceLiability?: { block: number; usd: string; unknownReserveUsd: string; requestIds: string[] };
   costs: {
     /** Explicit assumptions, not a claim about current Kuru fees. Negative values represent rebates. */
     makerFeeBps: string;
@@ -33,6 +41,19 @@ export interface DatasetHeader {
     gasPriceWei: string;
     aiCostPerDecisionUsd: string;
   };
+}
+
+export interface JevSettings {
+  modelId: string;
+  horizonBlocks: number;
+  timeoutMs: number;
+  maxSignalAgeBlocks: number;
+  requestEveryBlocks: number;
+  maxRequests: number;
+  maxEstimatedSpendUsd: string;
+  unknownCostReserveUsd: string;
+  inputUsdPerMTok: string;
+  outputUsdPerMTok: string;
 }
 
 export interface EngineConfig {

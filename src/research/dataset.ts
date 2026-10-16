@@ -26,5 +26,10 @@ export function parseDataset(bytes: string, path = "dataset") {
       ids.add(trade.id);
     }
   }
+  if (header.terminalInferenceLiability) {
+    invariant(header.terminalInferenceLiability.block === frames.at(-1)!.block, "terminal inference liability must belong to the dataset end");
+    const applied = new Set(frames.flatMap((f) => f.decision?.requestId ? [f.decision.requestId] : []));
+    invariant(header.terminalInferenceLiability.requestIds.every((id) => !applied.has(id)), "terminal inference cost already charged on a frame");
+  }
   return { header, frames, sha256: createHash("sha256").update(bytes).digest("hex") };
 }

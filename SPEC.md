@@ -10,7 +10,7 @@ The original promotional requirements to place an order every block and show a f
 
 Paper execution only. Shared deterministic state machine, precise decimal accounting, finalized block recording, causal replay, chronological parameter selection, baselines, cost sensitivity, risk controls, durable input journal and automated checks.
 
-Do not interpret synthetic fixtures, the upstream mock model or the original dashboard as demonstrated trading performance. The collector does not invoke Jev. Recorded model decisions can be replayed if captured causally with latency and cost.
+Do not interpret synthetic fixtures, the upstream mock model or the original dashboard as demonstrated trading performance. The collector has a paper-only online Jev adapter with bounded asynchronous inference, causal availability frames, a durable request ledger, usage estimates and unknown-cost provisions. Authenticated Jev service validation remains dependent on an API key; offline SDK contract tests do not establish model performance.
 
 ## Acceptance criteria
 
@@ -29,7 +29,7 @@ Do not interpret synthetic fixtures, the upstream mock model or the original das
 - Contract-verified maker fees/rebates and settlement currencies, actual gas receipts and inference bills, deposit/withdrawal reconciliation and gas-wallet inventory accounting.
 - Measurement of order submission latency, fills, queue behavior, post-only rejection and partial-fill/cancel races against real exchange events.
 - Emergency cancellation and process-independent monitoring; a loss limit must account for outstanding, already submitted transactions.
-- Online inference with bounded deadlines, real cost capture on errors/timeouts, model-version provenance and calibrated/validated decision thresholds.
+- Service-validated online inference, verified inference invoices and calibrated/validated decision thresholds. The paper adapter records requested/returned model IDs, prompt hash and usage; a mutable `jev-latest` alias is not an immutable model-version guarantee.
 - Fresh recorded data, multiple untouched forward test periods and performance comparisons after costs. A positive test alone does not establish an edge.
 - Separate explicit user authorization for live enablement and any funded trading.
 

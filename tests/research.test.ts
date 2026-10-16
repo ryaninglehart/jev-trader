@@ -227,9 +227,9 @@ describe("evaluation", () => {
   });
   test("live execution is rejected before any RPC or wallet funding", () => {
     const result = Bun.spawnSync([process.execPath, "-e", 'import {Market} from "./src/market"; await new Market().init();'], {
-      env: { ...process.env, DRY_RUN: "false", PRIVATE_KEY: "0x" + "11".repeat(32), RPC_URL: "http://127.0.0.1:1" },
+      env: { ...process.env, DRY_RUN: "false", PRIVATE_KEY: "0x" + "11".repeat(32), RPC_URL: "http://127.0.0.1:1" }, timeout: 10_000,
     });
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr.toString()).toContain("Live execution is disabled");
-  });
+  }, 15_000);
 });

@@ -8,30 +8,45 @@ import { invariant } from "../src/research/validation";
 import { args, output, protectOutput, settings } from "./research-args";
 import type { Frame } from "../src/research/types";
 import { dec } from "../src/research/ledger";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { buildJevState, createJevEvaluator, JEV_PROMPT_HASH } from "../src/research/jev";
+import { JevRunner, withInferenceCosts } from "../src/research/jev-runner";
 
 let session: PaperSession | undefined;
+let runner: JevRunner | undefined;
+const consumedIds = new Set<string>();
 let stopping = false;
+let reportPath: string | undefined;
+let requestedBlocks = 0, count = 0, failed = false;
 process.on("SIGINT", () => { stopping = true; });
 process.on("SIGTERM", () => { stopping = true; });
 try {
   const a = args(["config", "state", "blocks", "out"]);
   invariant(a.config && a.state, "usage: bun run paper --config research.example.json --state data/paper.jsonl [--blocks 1000] [--out data/paper-report.json]");
-  protectOutput(a.out, [a.config, a.state]);
+  protectOutput(a.out, [a.config, a.state, a.state + ".jev.jsonl"]);
+  reportPath = a.out;
   invariant(chainConfig.dryRun, "Paper recorder requires DRY_RUN=true; it never accepts a live wallet");
-  const { header, config } = settings(a.config);
+  const { header, config, jev } = settings(a.config);
   invariant(header.dataKind === "recorded", "paper collector requires recorded provenance");
   invariant(header.market.toLowerCase() === chainConfig.market.toLowerCase() && header.chainId === chainConfig.chainId, "dataset market/chain does not match RPC configuration");
-  invariant(config.strategy !== "recorded", "AI replay requires previously recorded causal decisions; this collector supports deterministic strategies only");
+  invariant(config.strategy === "recorded" ? jev : !jev, "online Jev requires recorded strategy and an explicit jev settings section");
+  // Fail before market I/O, state creation or a silent stand-in if credentials are absent.
+  const evaluator = jev ? createJevEvaluator(jev) : null;
+  if (jev) invariant(!header.terminalInferenceLiability, "a new online run cannot inherit a prior run's terminal inference costs");
+  if (jev) header.inference = { provider: "typesafe-ai", modelId: jev.modelId, promptHash: JEV_PROMPT_HASH, settings: jev };
   const blocks = Number(a.blocks ?? 1000);
   invariant(Number.isSafeInteger(blocks) && blocks >= 1 && blocks <= 1_000_000, "blocks must be 1..1000000");
+  requestedBlocks = blocks;
   const market = new Market();
   await market.init(); // dry-run guard prevents deposits, approvals and transaction submission
-  session = new PaperSession(a.state, header, config);
+  session = new PaperSession(a.state, header, config, jev ? { kind: "jev", path: resolve(a.state + ".jev.jsonl") } : undefined);
+  for (const f of session.frames) if (f.decision?.requestId) consumedIds.add(f.decision.requestId);
+  if (jev && evaluator) runner = new JevRunner(a.state + ".jev.jsonl", jev, evaluator, createHash("sha256").update(JSON.stringify({ header, config, state: resolve(a.state) })).digest("hex"), consumedIds);
   const feed = new TradeFeed({ market: chainConfig.market, url: chainConfig.readRpcUrl, sizeDec: log10(market.params.sizePrecision) });
   if (session.lastFrame) feed.lastBlock = session.lastFrame.block;
   let next = session.lastFrame ? session.lastFrame.block + 1 : 0;
   let lastProgress = Date.now();
-  let count = 0;
   while (!stopping && count < blocks) {
     const finalized = await rpc<{ number: string; timestamp: string } | null>("eth_getBlockByNumber", ["finalized", false], chainConfig.readRpcUrl);
     invariant(finalized, "RPC does not provide finalized blocks; refusing latest-head fallback");
@@ -62,10 +77,25 @@ try {
       asks: book.levels.asks.map(([p, s]) => [dec(p).toFixed(), dec(s).toFixed()]),
       trades: prints.map((p) => ({ id: p.id, side: p.side, price: dec(p.price).toFixed(), size: dec(p.size).toFixed() })), gasPriceWei,
     };
+    if (runner) frame.decision = runner.decision(frame, consumedIds);
     session.step(frame);
+    if (frame.decision?.requestId) consumedIds.add(frame.decision.requestId);
+    if (runner && jev && !session.engine.halted && !stopping && count + 1 < blocks && next === head) {
+      const e = session.engine;
+      const resting = (side: "buy" | "sell") => dec(e.active?.side === side ? e.active.remaining : "0").add(e.pending?.side === side ? e.pending.size : "0").toString();
+      runner.launch(frame, buildJevState(frame, session.frames.slice(0, -1), { mon: e.ledger!.mon.toString(), cash: e.ledger!.cash.toString(), restingBuy: resting("buy"), restingSell: resting("sell") }, header, config, jev), consumedIds);
+    }
     next++; count++; lastProgress = Date.now();
     if (count % 100 === 0) console.log(`Paper blocks ${count}; net P&L $${session.engine.report().netPnlUsd}`);
   }
-  if (session.lastFrame) output(a.out, session.engine.report());
-} catch (e) { console.error((e as Error).message); process.exitCode = 1; }
-finally { session?.close(); }
+} catch (e) { failed = true; console.error((e as Error).message); process.exitCode = 1; }
+finally {
+  try {
+    try { await runner?.close(); }
+    catch (e) { failed = true; process.exitCode = 1; console.error((e as Error).message); }
+    if (session?.lastFrame) {
+      const report = session.engine.report();
+      output(reportPath, { ...(runner ? withInferenceCosts(report, runner.audit(consumedIds)) : report), runStatus: failed ? "failed" : stopping ? "interrupted" : "completed", requestedBlocks, processedBlocksThisRun: count, liveTradingEnabled: false });
+    }
+  } finally { session?.close(); }
+}

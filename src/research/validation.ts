@@ -20,6 +20,12 @@ export function validateHeader(h: DatasetHeader) {
   amount(h.costs.gasPriceWei, "gasPriceWei", true);
   amount(h.costs.aiCostPerDecisionUsd, "aiCostPerDecisionUsd");
   invariant(typeof h.costs.makerFeeBps === "string" && /^-?\d+(\.\d+)?$/.test(h.costs.makerFeeBps) && dec(h.costs.makerFeeBps).gte(-100) && dec(h.costs.makerFeeBps).lte(1000), "explicit makerFeeBps required (-100..1000)");
+  if (h.terminalInferenceLiability) {
+    const t = h.terminalInferenceLiability;
+    invariant(Number.isSafeInteger(t.block) && t.block >= 1 && Array.isArray(t.requestIds) && t.requestIds.length > 0 && t.requestIds.every((id) => typeof id === "string" && id.length > 0) && new Set(t.requestIds).size === t.requestIds.length, "invalid terminal inference liability");
+    amount(t.usd, "terminal inference cost"); amount(t.unknownReserveUsd, "terminal unknown reserve");
+    invariant(dec(t.unknownReserveUsd).lte(t.usd), "unknown reserve exceeds terminal inference cost");
+  }
 }
 export function validateConfig(c: EngineConfig) {
   invariant(["hold", "maker", "momentum", "recorded"].includes(c.strategy), "unknown strategy");
@@ -71,5 +77,13 @@ export function validateFrame(f: Frame, previous?: Frame) {
     invariant(Number.isFinite(f.decision.confidence) && f.decision.confidence >= 0 && f.decision.confidence <= 1, "invalid confidence");
     invariant(Number.isFinite(f.decision.latencyMs) && f.decision.latencyMs >= 0, "invalid latency");
     if (f.decision.costUsd !== undefined) amount(f.decision.costUsd, "decision costUsd");
+    const d = f.decision;
+    if (d.requestId !== undefined) invariant(typeof d.requestId === "string" && d.requestId.length > 0, "invalid requestId");
+    if (d.availableBlock !== undefined) {
+      invariant(d.availableBlock === f.block && Number.isSafeInteger(d.sourceBlock) && d.sourceBlock! < f.block && d.sourceBlock! >= 1, "decision must be received after its source observation, on its recorded availability frame");
+    }
+    if (d.status !== undefined) invariant(["ok", "pending", "stale", "error", "timeout", "recovered", "budget"].includes(d.status), "invalid decision status");
+    if (d.status && d.status !== "ok") invariant(d.action === "hold", "non-success decision must hold");
+    for (const n of [d.inputTokens, d.outputTokens]) if (n !== undefined) invariant(Number.isSafeInteger(n) && n >= 0, "invalid token usage");
   }
 }

@@ -22,10 +22,11 @@
     "paper": "bun run scripts/paper.ts",
     "paper:replay": "bun run scripts/paper-replay.ts",
     "paper:export": "bun run scripts/export-dataset.ts",
+    "paper:compare": "bun run scripts/compare-paper.ts",
     "backtest": "bun run scripts/backtest.ts",
     "fixture": "bun run scripts/make-fixture.ts",
     "test": "bun test tests",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.research.json",
+    "typecheck": "bun node_modules/typescript/bin/tsc --noEmit && bun node_modules/typescript/bin/tsc --noEmit -p tsconfig.research.json",
     "demo": "bun run src/index.ts",
     "dev": "bun --watch run scripts/paper.ts"
   }

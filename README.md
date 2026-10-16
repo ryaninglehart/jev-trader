@@ -53,7 +53,23 @@ Only finalized blocks are used. On restart the collector backfills every missing
 - `hold`: retain the initial portfolio without orders.
 - `recorded`: replay previously recorded causal model decisions, including their latency and actual USD charge (or the header's per-decision assumption if no charge is supplied).
 
-The new market collector supports the deterministic strategies. It does not call Jev. To evaluate Jev, first obtain a dataset with decisions recorded after each observation, without future labels, and use `recorded` in the engine settings. Missing decisions fail validation. Training a model, proving its prediction quality and connecting an online AI inference adapter are separate work.
+The collector can call Jev through the installed TypeSafe AI SDK. Put `TYPESAFE_AI_API_KEY` in a local `.env` file (never in JSON configuration or Git), keep `DRY_RUN=true`, and run:
+
+```sh
+bun run paper --config research.jev.example.json --state data/jev-paper.jsonl --blocks 3000 --out data/jev-paper-report.json
+bun run paper:export --state data/jev-paper.jsonl --out data/jev-market.jsonl
+bun run paper:compare --input data/jev-market.jsonl --config research.jev.example.json --out data/jev-comparison.json
+```
+
+**No credential means no Jev run.** This path fails before market I/O or state creation if the key is missing; it never substitutes the upstream mock. The transport has offline SDK contract tests, but an authenticated service run still requires a real key.
+
+At most one inference runs at a time. Market recording continues while it is pending. Replies are recorded on their actual availability frame, with source block, request ID, returned model ID, latency and usage. A stale response holds; an error or timeout also holds. Pending inference preserves an existing quote only until its TTL or a risk/data check requires cancellation. Catch-up history does not trigger fresh live model calls.
+
+The example sets a 750 ms decision deadline, 2.5 s hard request timeout, three-block signal age limit, 5,000-request limit and $1 **estimated** spend limit. These are experimental settings, not measured optimal values. The input/output prices are explicit assumptions; token usage times configured prices is a cost estimate, not a verified invoice. Missing usage, errors, timeouts and abandoned requests reserve $0.001 each. No external provider bill is guaranteed to stay below this local estimate limit.
+
+API starts and completions are persisted in `<state>.jev.jsonl`, alongside the paper journal. Restore both files together. A started request without a completion is conservatively charged on recovery and never automatically resent. Paper reports include inference costs not yet applied to a market frame. Exported datasets retain those final costs as a terminal liability; replay does not drop them. The offline hold/maker/momentum baselines do not pay for Jev calls they did not make.
+
+Use `paper:compare` for a full-period, fixed-parameter comparison. Use `backtest` for the separate development/test selection workflow. Never tune settings against the same period and then call it an untouched test.
 
 The original UI is retained under `web/` and `bun run demo` for reference. It uses the upstream demo simulator, not the research engine or its reports. Live execution is also blocked there. Use the research reports to assess this fork's costs and performance.
 
@@ -65,6 +81,6 @@ Open inventory is **marked to mid, not liquidated**. Exit fees, price impact and
 
 The initial MON position is funded capital valued at the first observed mid. Simulated gas is purchased at each inclusion block's MON mid and charged against USD cash; this is an explicit reporting convention, not a representation of a real gas-wallet balance. No borrowing or short selling is modeled.
 
-Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
+Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `research-v2`; v1 journals must be exported with their original version and replayed as datasets into a new v2 session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
 
 See [the research specification](SPEC.md) and [accounting and execution details](docs/METHODOLOGY.md) for limits and the live-enablement work still required.
