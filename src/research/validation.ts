@@ -28,7 +28,7 @@ export function validateHeader(h: DatasetHeader) {
   }
 }
 export function validateConfig(c: EngineConfig) {
-  invariant(["hold", "maker", "momentum", "recorded"].includes(c.strategy), "unknown strategy");
+  invariant(["hold", "maker", "momentum", "patient", "recorded"].includes(c.strategy), "unknown strategy");
   for (const k of ["initialCashUsd", "initialMon", "queueFactor"] as const) amount(c[k], k);
   for (const k of ["orderSizeMon", "maxPositionMon", "maxLossUsd"] as const) amount(c[k], k, true);
   invariant(dec(c.initialCashUsd).gt(0), "initialCashUsd must cover fees and gas");
@@ -39,6 +39,17 @@ export function validateConfig(c: EngineConfig) {
   invariant(Number.isFinite(c.minSpreadBps) && Number.isFinite(c.maxSpreadBps) && c.minSpreadBps >= 0 && c.maxSpreadBps >= c.minSpreadBps, "invalid spread limits");
   invariant(Number.isFinite(c.maxDrawdownPct) && c.maxDrawdownPct > 0 && c.maxDrawdownPct <= 100, "invalid maxDrawdownPct");
   invariant(Number.isFinite(c.decisionDeadlineMs) && c.decisionDeadlineMs > 0, "invalid decisionDeadlineMs");
+  if (c.strategy === "patient") invariant(c.patient && c.economicGate?.enabled, "patient strategy requires settings and enabled economic gate");
+  if (c.patient !== undefined) {
+    const p = c.patient;
+    invariant(p && Number.isSafeInteger(p.lookbackMs) && p.lookbackMs >= 1000 && p.lookbackMs <= 300000, "invalid patient lookback");
+    invariant(Number.isSafeInteger(p.shortLookbackMs) && p.shortLookbackMs >= 1000 && p.shortLookbackMs < p.lookbackMs, "invalid patient short lookback");
+    invariant(Number.isSafeInteger(p.depthLevels) && p.depthLevels >= 1 && p.depthLevels <= 20, "invalid patient depthLevels");
+    for (const k of ["minFlowVolumeMon", "minFlowImbalance", "minBookImbalance", "minTrendBps", "maxTrendBps", "maxShortMoveBps"] as const) amount(p[k], `patient.${k}`, true);
+    invariant(dec(p.minFlowImbalance).lte(1) && dec(p.minBookImbalance).lte(1) && dec(p.maxTrendBps).gte(p.minTrendBps), "invalid patient signal thresholds");
+    invariant(p.bookPolicy === undefined || ["confirm", "veto_opposition"].includes(p.bookPolicy), "invalid patient book policy");
+    invariant(Object.keys(p).every((k) => ["bookPolicy", "lookbackMs", "shortLookbackMs", "minFlowVolumeMon", "minFlowImbalance", "minBookImbalance", "minTrendBps", "maxTrendBps", "maxShortMoveBps", "depthLevels"].includes(k)), "unknown patient setting");
+  }
   if (c.economicGate !== undefined) {
     const g = c.economicGate;
     invariant(g && typeof g.enabled === "boolean", "economicGate.enabled must be boolean");

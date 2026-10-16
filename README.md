@@ -35,6 +35,21 @@ The **fill diagnostics** measure signed fill-price-to-future-mid returns at 1, 5
 
 `edgefoundry:compare` runs fixed original-cadence, reduced-replacement, full-gate and cash-hold variants on identical inputs and capital/risk limits. It includes doubled gas/latency/queue and 5-bps fee scenarios. It does not select parameters. `research.example.json` remains available for legacy baseline reproduction; opt-in settings preserve those experiments. Jev remains an optional inference adapter and still requires a TypeSafe API key.
 
+## Patient strategy research
+
+`edgefoundry.patient.example.json` adds a selective, uncalibrated hypothesis: 30-second and 5-second price trends must agree with actual signed taker volume; materially opposing top-three-level depth vetoes a quote. Neutral depth is allowed. Thin flow, fast moves, missing depth and spot-balance constraints hold. It joins the best price rather than paying one tick to improve it. It preserves the recommended profile's cash, order size, loss/drawdown/position limits and all economic-gate settings.
+
+The archived `edgefoundry.patient-v1.example.json` required positive depth confirmation. Development data showed balanced depth often blocked every signal; v1 remains reproducible and included in comparisons. No forecast return or model probability is credited to either candidate's economic gate.
+
+```sh
+bun run edgefoundry:compare --input data/edgefoundry-market.jsonl --candidate edgefoundry.patient.example.json --reference edgefoundry.patient-v1.example.json --role heldout --out data/patient-comparison.json
+bun run dashboard --report data/patient-comparison.json
+```
+
+Use `--role development` for data used to refine rules, `heldout` only for outcomes not consulted during rule selection, and the default `replay` for general fixed-setting replays. The role is a study declaration, not an automatic independence guarantee. The report retains every supplied variant; it performs no automated selection.
+
+New diagnostics distinguish signal rejection from cost infeasibility, measure spaced signals' subsequent price moves, and estimate remaining inventory's proceeds through recorded bid depth after exit reserves. Signal outcomes are diagnostic only; no future labels enter decisions. Hypothetical signal returns are not fills or profit. [The research protocol](docs/STRATEGY_RESEARCH.md) explains the limits.
+
 ## Quick start: offline verification
 
 Requires Bun 1.4.3 or later. No wallet or API key is needed.
@@ -102,6 +117,6 @@ Open inventory is **marked to mid, not liquidated**. Exit fees, price impact and
 
 The initial MON position is funded capital valued at the first observed mid. Simulated gas is purchased at each inclusion block's MON mid and charged against USD cash; this is an explicit reporting convention, not a representation of a real gas-wallet balance. No borrowing or short selling is modeled.
 
-Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `edgefoundry-v3`; older journals must be exported with their original version and replayed as datasets into a new session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
+Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `edgefoundry-v4`; older journals must be exported with their original version and replayed as datasets into a new session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
 
 See [the research specification](SPEC.md) and [accounting and execution details](docs/METHODOLOGY.md) for limits and the live-enablement work still required.

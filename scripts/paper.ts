@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { buildJevState, createJevEvaluator, JEV_PROMPT_HASH } from "../src/research/jev";
 import { JevRunner, withInferenceCosts } from "../src/research/jev-runner";
+import { completeTradePoll } from "../src/research/recording";
 
 let session: PaperSession | undefined;
 let runner: JevRunner | undefined;
@@ -65,8 +66,7 @@ try {
       rpc<{ baseFeePerGas?: string; hash: string; parentHash: string; timestamp: string }>("eth_getBlockByNumber", [tag, false], chainConfig.readRpcUrl),
     ]);
     invariant(book.block === next, "RPC book snapshot block differs from requested finalized block");
-    await feed.poll(next);
-    invariant(feed.lastBlock === next, "trade log poll incomplete; refusing incomplete frame");
+    await completeTradePoll(feed, next);
     const prints = feed.drainPrints().filter((p) => p.block === next);
     invariant(gasBlock?.baseFeePerGas, "block has no base fee; an explicit gas estimate cannot be computed");
     const gasPriceWei = (BigInt(gasBlock.baseFeePerGas) + BigInt(Math.round(chainConfig.priorityFeeGwei * 1e9))).toString();

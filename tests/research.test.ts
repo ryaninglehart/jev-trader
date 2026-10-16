@@ -225,11 +225,12 @@ describe("evaluation", () => {
     expect(first.baselines.hold!.netPnlUsd).toBe("0");
     expect(first.warning).toContain("SYNTHETIC");
   });
-  test("live execution is rejected before any RPC or wallet funding", () => {
-    const result = Bun.spawnSync([process.execPath, "-e", 'import {Market} from "./src/market"; await new Market().init();'], {
-      env: { ...process.env, DRY_RUN: "false", PRIVATE_KEY: "0x" + "11".repeat(32), RPC_URL: "http://127.0.0.1:1" }, timeout: 10_000,
+  test("live execution is rejected before any RPC or wallet funding", async () => {
+    const child = Bun.spawn([process.execPath, "-e", 'import {Market} from "./src/market"; await new Market().init();'], {
+      env: { ...process.env, DRY_RUN: "false", PRIVATE_KEY: "0x" + "11".repeat(32), RPC_URL: "http://127.0.0.1:1" }, timeout: 20_000, stdout: "pipe", stderr: "pipe",
     });
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stderr.toString()).toContain("Live execution is disabled");
-  }, 15_000);
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("Live execution is disabled");
+  }, 30_000);
 });

@@ -1,13 +1,16 @@
 import { dec, Ledger } from "./ledger";
 import { decide } from "./strategy";
-import type { DatasetHeader, EngineConfig, Execution, Frame, Order, Pending, Side } from "./types";
+import type { DatasetHeader, EngineConfig, Execution, Frame, Order, Pending, Side, SignalDiagnostics } from "./types";
+import { frameTime } from "./patient";
 import { invariant, validateConfig, validateFrame, validateHeader } from "./validation";
 import { economicEstimate, type GateDecision } from "./economics";
 import { FillQualityTracker } from "./fill-quality";
+import { liquidationEstimate } from "./liquidation";
+import { SignalQualityTracker } from "./signal-quality";
 
 export const midOf = (f: Frame) => dec(f.bids[0]![0]).add(f.asks[0]![0]).div(2).toString();
 // Bump when execution/accounting semantics change; older journals must use their original engine.
-export const ENGINE_VERSION = "edgefoundry-v3";
+export const ENGINE_VERSION = "edgefoundry-v4";
 
 /**
  * One deterministic engine for replay and paper trading. Each block:
@@ -37,9 +40,17 @@ export class Engine {
   private intentCount = 0;
   private lastEquity = dec(0);
   readonly fillQuality = new FillQualityTracker();
+  readonly signalQuality = new SignalQualityTracker();
   private gateAudit: GateDecision[] = [];
   private gateCounts = { evaluated: 0, accepted: 0, blocked: 0, retained: 0 };
   private quoteCounts = { unchanged: 0, minimumRest: 0, smallPriceMove: 0, insufficientImprovement: 0, economicRetention: 0, cancellations: 0 };
+  private signalHistory: Frame[] = [];
+  private signalCounts: Record<string, number> = {};
+  private recentSignals: (SignalDiagnostics & { block: number; action: string })[] = [];
+  private touchQuotes = 0;
+  private touchQuotesClearing = 0;
+  private bestTouchNet: string | null = null;
+  private breakEvenCaptureSum = dec(0);
 
   constructor(readonly header: DatasetHeader, readonly config: EngineConfig, warmupMids: string[] = []) {
     validateHeader(header); validateConfig(config);
@@ -73,9 +84,37 @@ export class Engine {
     this.fillResting(frame);
     this.settle(frame);
     this.fillQuality.observe(frame);
+    this.signalQuality.observe(frame);
+    if (this.config.economicGate?.enabled) {
+      const g = this.config.economicGate;
+      // Diagnose whether current touch quotes could clear the cost gate before
+      // signals or spot balances are considered. This never submits an order.
+      for (const side of ["buy", "sell"] as const) {
+        const px = (side === "buy" ? frame.bids : frame.asks)[0]![0];
+        const estimate = economicEstimate(this.header, frame, side, px, this.config.orderSizeMon, g);
+        this.touchQuotes++;
+        if (estimate.accepted) this.touchQuotesClearing++;
+        if (this.bestTouchNet === null || dec(estimate.expectedNetEdgeUsd).gt(this.bestTouchNet)) this.bestTouchNet = estimate.expectedNetEdgeUsd;
+        const hurdles = dec(estimate.expectedCaptureUsd).sub(estimate.expectedNetEdgeUsd).add(g.minNetEdgeUsd);
+        this.breakEvenCaptureSum = this.breakEvenCaptureSum.add(hurdles.div(dec(this.config.orderSizeMon).mul(g.expectedFillFraction).mul(mid)).mul(10_000));
+      }
+    }
     this.mids.push(mid);
     if (this.mids.length > 100) this.mids.shift();
-    const intent = decide(frame, this.mids, this.ledger.mon.toString(), this.config);
+    const intent = decide(frame, this.mids, this.ledger.mon.toString(), this.config, this.signalHistory);
+    if (this.config.strategy === "patient") {
+      this.signalHistory.push(frame);
+      const before = frameTime(frame) - this.config.patient!.lookbackMs;
+      while (this.signalHistory.length > 2 && frameTime(this.signalHistory[1]!) <= before) this.signalHistory.shift();
+      // A frozen market clock cannot grow memory without bound; it also cannot warm up.
+      if (this.signalHistory.length > 5000) this.signalHistory.shift();
+    }
+    if (intent.signal) {
+      if (intent.signal.reason === "ready" && intent.action !== "hold") this.signalQuality.add(frame, intent.action);
+      this.signalCounts[intent.signal.reason] = (this.signalCounts[intent.signal.reason] ?? 0) + 1;
+      this.recentSignals.push({ ...intent.signal, block: frame.block, action: intent.action });
+      if (this.recentSignals.length > 50) this.recentSignals.shift();
+    }
     this.intentCount++;
     if (this.config.strategy === "recorded") this.ledger.ai(frame.decision?.costUsd ?? this.header.costs.aiCostPerDecisionUsd);
     this.updateRisk(frame, mid);
@@ -261,11 +300,16 @@ export class Engine {
       fills: this.fills, filledOrders: this.filledOrders.size,
       orderFillRate: this.placed ? this.filledOrders.size / this.placed : 0,
       inventoryMon: l.mon.toString(), cashUsd: l.cash.toString(),
+      liquidationEstimate: liquidationEstimate(this.header, this.previous, this.config, l.cash.toString(), l.mon.toString(), l.initialEquity.toString(), provisions.toString()),
       halted: this.halted, active: this.active, pending: this.pending,
       liveTradingEnabled: false,
-      economicGate: { enabled: this.config.economicGate?.enabled ?? false, ...this.gateCounts, assumptions: this.config.economicGate ?? null, recentDecisions: this.gateAudit.map((x) => ({ ...x })), methodology: "Current-mid spread capture with an explicit assumed fill fraction; no predicted directional alpha. Reserve full entry, cancellation and exit gas, fees, inference and adverse-selection/uncertainty buffers. Estimates are decision filters, not realized profit or calibrated probabilities. Retained quotes exclude sunk placement and inference costs." },
+      strategyDiagnostics: { counts: { ...this.signalCounts }, recentSignals: this.recentSignals.map((x) => ({ ...x })), methodology: this.config.strategy === "patient" ? "Fixed, uncalibrated eligibility rules: trailing price trends, signed taker flow and top-book depth must agree. Thin/fast/conflicting markets hold. Eligibility is not a probability or forecast credited to the cost gate." : "Built-in baseline or recorded decisions; no patient signal filter." },
+      economicGate: { enabled: this.config.economicGate?.enabled ?? false, ...this.gateCounts, assumptions: this.config.economicGate ?? null, recentDecisions: this.gateAudit.map((x) => ({ ...x })),
+        touchEconomics: { quotesChecked: this.touchQuotes, quotesClearing: this.touchQuotesClearing, bestEstimatedNetEdgeUsd: this.bestTouchNet, averageRequiredCaptureBps: this.touchQuotes ? this.breakEvenCaptureSum.div(this.touchQuotes).toString() : null, methodology: "Both best bid and best ask, before signal and balance filters. Required capture is a one-sided limit-to-mid edge, not the full bid/ask spread. Gate assumptions remain uncalibrated." },
+        methodology: "Current-mid spread capture with an explicit assumed fill fraction; no predicted directional alpha. Reserve full entry, cancellation and exit gas, fees, inference and adverse-selection/uncertainty buffers. Estimates are decision filters, not realized profit or calibrated probabilities. Retained quotes exclude sunk placement and inference costs." },
       quotePolicy: { ...this.quoteCounts, assumptions: this.config.quotePolicy ?? null },
       fillQuality: this.fillQuality.report(),
+      signalQuality: this.signalQuality.report(),
       risk: { maxLossUsd: this.config.maxLossUsd, maxDrawdownPct: this.config.maxDrawdownPct, maxPositionMon: this.config.maxPositionMon,
         potentialInventoryMon: l.mon.add(this.active?.side === "buy" ? this.active.remaining : "0").add(this.pending?.side === "buy" ? this.pending.size : "0").toString(),
         lossBudgetUsedPct: net.lt(0) ? net.neg().div(this.config.maxLossUsd).mul(100).toString() : "0" },

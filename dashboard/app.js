@@ -11,7 +11,7 @@ const colors = { edge: "#d7f68e", churn: "#b39de8", baseline: "#d6a18a", hold: "
 function validateReport(r) {
   if (r?.schema !== "edgefoundry-comparison-v1" || r.liveTradingEnabled !== false || !r.dataset || !Array.isArray(r.variants)) throw new Error("Please import an EdgeFoundry comparison report with live trading disabled.");
   if (!["recorded", "synthetic"].includes(r.dataset.dataKind) || !Number.isFinite(r.dataset.durationSeconds) || !Number.isSafeInteger(r.dataset.frames) || !Number.isFinite(Date.parse(r.dataset.firstObservedAt)) || !Number.isFinite(Date.parse(r.dataset.lastObservedAt))) throw new Error("Invalid dataset information.");
-  for (const id of ["momentum-baseline", "momentum-churn", "momentum-edge", "maker-baseline", "maker-churn", "maker-edge", "hold"]) {
+  for (const id of ["momentum-baseline", "momentum-churn", "momentum-edge", "maker-baseline", "maker-churn", "maker-edge", "hold", ...(r.variants.some((v) => v.id === "patient-edge") ? ["patient-edge"] : []), ...(r.variants.some((v) => v.id === "patient-v1") ? ["patient-v1"] : [])]) {
     const v = r.variants.find((x) => x.id === id);
     if (!v || r.variants.filter((x) => x.id === id).length !== 1 || v.liveTradingEnabled !== false || !v.costs || !v.economicGate || !v.quotePolicy || !v.fillQuality || !v.risk || !v.config || !Array.isArray(v.curve) || !Array.isArray(v.economicGate.recentDecisions) || !Array.isArray(v.fillQuality.fills) || !Array.isArray(v.fillQuality.horizons) || v.fillQuality.horizons.length !== 3) throw new Error(`Incomplete variant: ${id}`);
     for (const val of [v.netPnlUsd, v.costs.totalUsd, v.attempts, v.fills, v.maxDrawdownPct, v.risk.potentialInventoryMon]) if (!Number.isFinite(Number(val))) throw new Error("Invalid financial amount in report.");
@@ -27,34 +27,49 @@ function acceptData(data) {
   $("runSelect").innerHTML = candidate.runs.map((run, i) => `<option value="${i}">${esc(run.label || `Recording ${i + 1}`)}</option>`).join("");
   $("runSelect").value = String(candidate.runs.length - 1);
   $("downloadButton").disabled = false; $("workspace").hidden = false; $("empty").hidden = true;
+  if (candidate.runs.at(-1).report.variants.some((v) => v.id === "patient-edge")) $("strategySelect").value = "patient";
   render();
 }
 function variants() {
+  if (strategy === "patient") return [
+    { ...current.variants.find((v) => v.id === "momentum-baseline"), label: "Original momentum", stage: "baseline" },
+    { ...current.variants.find((v) => v.id === "momentum-edge"), label: "Previous EdgeFoundry", stage: "churn" },
+    { ...current.variants.find((v) => v.id === "patient-edge"), label: "Patient candidate", stage: "edge" },
+  ];
   return ["baseline", "churn", "edge"].map((stage) => current.variants.find((v) => v.id === `${strategy}-${stage}`));
 }
 function render() {
   current = bundle.runs[n($("runSelect").value)].report;
+  const hasPatient = current.variants.some((v) => v.id === "patient-edge");
+  $("strategySelect").querySelector('option[value="patient"]').disabled = !hasPatient;
+  if (!hasPatient && $("strategySelect").value === "patient") $("strategySelect").value = "momentum";
   strategy = $("strategySelect").value;
   const [base, churn, edge] = variants();
   const hold = current.variants.find((x) => x.id === "hold");
   const d = current.dataset;
-  $("dataBadge").textContent = `${d.dataKind === "recorded" ? "REAL MARKET DATA" : "SYNTHETIC FIXTURE"} · ${number(d.frames)} BLOCKS · ${(d.durationSeconds / 60).toFixed(1)} MIN`;
+  $("dataBadge").textContent = `${d.dataKind === "recorded" ? "REAL MARKET DATA" : "SYNTHETIC FIXTURE"} · ${number(d.frames)} BLOCKS · ${(d.durationSeconds / 60).toFixed(1)} MIN · ${(current.evaluationRole ?? "replay").toUpperCase()}`;
   $("netValue").textContent = money(edge.netPnlUsd); $("netValue").className = n(edge.netPnlUsd) < 0 ? "negative" : "";
   $("netNote").textContent = `${money(edge.initialEquityUsd, 0)} starting capital · marked to mid`;
   const savings = n(base.costs.totalUsd) - n(edge.costs.totalUsd);
   $("savedValue").textContent = money(savings); $("savedValue").className = savings < 0 ? "negative" : "";
   $("attemptValue").textContent = number(edge.attempts); $("attemptNote").textContent = `${number(base.attempts)} with original cadence`;
   $("fillValue").textContent = number(edge.fills); $("fillNote").textContent = `${number(d.tradePrints)} observed market trades`;
+  $("savedNote").textContent = `Compared with ${base.label.toLowerCase()}`;
+  $("edgeLegend").innerHTML = `<i class="edge-color"></i>${esc(edge.label)}`;
+  $("churnLegend").innerHTML = `<i class="churn-color"></i>${esc(churn.label)}`;
+  $("baseLegend").innerHTML = `<i class="baseline-color"></i>${esc(base.label)}`;
+  for (const v of [base, churn, edge]) $("qualitySelect").querySelector(`option[value="${v.stage}"]`).textContent = v.label;
   renderChart([base, churn, edge, hold]);
   const g = edge.economicGate;
   $("gateHeadline").innerHTML = `<strong>${g.accepted === 0 ? "No trades cleared." : `${number(g.accepted)} cleared`}</strong><p>${g.accepted === 0 ? "No new quotes cleared the modeled cost hurdle." : "Quotes cleared the estimated economic hurdle."}</p>`;
   $("gateHeadline").querySelector("strong").style.fontSize = g.accepted === 0 ? "25px" : "35px";
   $("gateBar").style.width = `${g.evaluated ? 100 * g.blocked / g.evaluated : 0}%`;
   $("gateAccepted").textContent = number(g.accepted); $("gateBlocked").textContent = number(g.blocked); $("gateRetained").textContent = number(g.retained);
-  $("comparisonRows").innerHTML = [edge, churn, base, hold].map((v) => `<tr class="${v.stage === "edge" ? "featured" : ""}"><td><span class="row-dot" style="background:${colors[v.stage] || colors.hold}"></span>${esc(v.label)}</td><td class="${n(v.netPnlUsd) < 0 ? "negative" : ""}">${money(v.netPnlUsd)}</td><td>${money(v.costs.totalUsd)}</td><td>${number(v.attempts)}</td><td>${number(v.fills)}</td><td>${pct(v.maxDrawdownPct)}</td></tr>`).join("");
+  $("comparisonRows").innerHTML = [edge, churn, base, ...(strategy === "patient" && current.variants.some((v) => v.id === "patient-v1") ? [current.variants.find((v) => v.id === "patient-v1")] : []), hold].map((v) => `<tr class="${v.stage === "edge" ? "featured" : ""}"><td><span class="row-dot" style="background:${colors[v.stage] || colors.hold}"></span>${esc(v.label)}</td><td class="${n(v.netPnlUsd) < 0 ? "negative" : ""}">${money(v.netPnlUsd)}</td><td>${money(v.costs.totalUsd)}</td><td>${number(v.attempts)}</td><td>${number(v.fills)}</td><td>${pct(v.maxDrawdownPct)}</td></tr>`).join("");
   const q = churn.quotePolicy;
   $("comparisonNote").textContent = `Fewer replacements kept ${number(q.minimumRest + q.smallPriceMove + q.insufficientImprovement)} quotes through small changes. Original expiry: ${base.config.orderTtlBlocks} blocks; updated expiry: ${churn.config.orderTtlBlocks} blocks. A flat result is not evidence of a profitable strategy.`;
-  selectedDecision = undefined; renderDecisions(); renderQuality(); renderRisk(edge);
+  if (strategy === "patient") $("comparisonNote").textContent = `Patient v2 adds 30s/5s trend and actual taker-flow checks; materially opposing depth vetoes entry. It joins the best price. Archived v1 required positive depth confirmation. Previous EdgeFoundry uses the original momentum signal plus cost gate. All risk, size and gate settings are preserved. ${current.evaluationRole === "development" ? "This development recording informed the book-policy revision; it is not an untouched test." : current.evaluationRole === "heldout" ? "Configurations were frozen before this recording’s strategy outcomes were evaluated; every attempted variant is retained." : "Fixed-setting replay; do not assume previously inspected data is an untouched test."}`;
+  selectedDecision = undefined; renderDecisions(); renderQuality(); renderRisk(edge); renderSignals(edge);
   $("footerStatus").textContent = `${d.dataKind === "recorded" ? "Recorded market data" : "Synthetic fixture"} · Read-only snapshot`;
 }
 function renderChart(list) {
@@ -67,7 +82,7 @@ function renderChart(list) {
   const x = (ts) => left + (ts - first) / Math.max(1, last - first) * (width - left - right);
   const y = (value) => top + (hi - value) / (hi - lo) * (height - top - bottom);
   let svg = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><title>Net paper result in dollars over the selected recording</title>`;
-  for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4; svg += `<line x1="${left}" y1="${y(v)}" x2="${width - right}" y2="${y(v)}" stroke="#2b352d" stroke-dasharray="3 5"/><text x="${left - 10}" y="${y(v) + 4}" text-anchor="end">${money(v, 2)}</text>`; }
+  for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4; svg += `<line x1="${left}" y1="${y(v)}" x2="${width - right}" y2="${y(v)}" stroke="#2b352d" stroke-dasharray="3 5"/><text x="${left - 10}" y="${y(v) + 4}" text-anchor="end">${money(v, hi - lo < 0.1 ? 3 : 2)}</text>`; }
   // Render cash first so a flat EdgeFoundry line remains visible.
   for (const v of [...list].sort((a, b) => a.stage === "hold" ? -1 : b.stage === "hold" ? 1 : 0)) {
     const points = v.curve.map((p) => `${x(p.ts).toFixed(2)},${y(n(p.netPnlUsd)).toFixed(2)}`).join(" ");
@@ -88,11 +103,19 @@ function renderDecisions() {
   $("decisionBreakdown").innerHTML = d ? row("Expected spread capture", money(d.expectedCaptureUsd, 5)) + row("Entry + exit fees", "−" + money(d.expectedFeesUsd, 5)) + row("Adverse price reserve", "−" + money(d.adverseSelectionReserveUsd, 5)) + row("Uncertainty reserve", "−" + money(d.uncertaintyReserveUsd, 5)) + row("Gas budget", "−" + money(d.gasBudgetUsd, 5)) + row("Inference allocation", "−" + money(d.inferenceBudgetUsd, 5)) + row("Estimated net edge", money(d.expectedNetEdgeUsd, 5), "total") + row("Required minimum", money(d.requiredNetEdgeUsd, 5)) + `<p class="note">${esc(d.reason)}. These are estimates used to make a decision; actual simulated costs are recorded separately.</p>` : '<p class="estimate-empty">Select a cost-gate decision to inspect its assumptions.</p>';
 }
 function renderQuality() {
-  const stage = $("qualitySelect").value, v = current.variants.find((x) => x.id === `${strategy}-${stage}`), quality = v.fillQuality;
+  const stage = $("qualitySelect").value, v = variants().find((x) => x.stage === stage), quality = v.fillQuality;
   $("qualityMessage").innerHTML = v.fills ? `${number(v.fills)} simulated fill events in ${esc(v.label)}. Times use ${esc(current.dataset.clock)}.` : `No fills in ${esc(v.label)}; markouts are unavailable. ${stage === "edge" ? '<button id="viewBaselineFills">Inspect original cadence</button>' : "Choose another configuration to inspect its fills."}`;
   $("viewBaselineFills")?.addEventListener("click", () => { $("qualitySelect").value = "baseline"; renderQuality(); });
   $("markoutCards").innerHTML = quality.horizons.map((h) => `<div class="markout-card"><div>AFTER ${h.horizonMs / 1000} SECOND${h.horizonMs === 1000 ? "" : "S"}</div><strong class="${n(h.notionalWeightedBps) < 0 ? "negative" : ""}">${h.notionalWeightedBps === null ? "—" : n(h.notionalWeightedBps).toFixed(2) + " bps"}</strong><small>${number(h.measured)} measured · ${number(h.censored)} censored · ${number(h.late)} late</small></div>`).join("");
   $("fillRows").innerHTML = quality.fills.length ? quality.fills.slice(-30).reverse().map((fill) => `<tr><td>${number(fill.block)}<span class="row-meta">${esc(fill.side.toUpperCase())} · ${esc(fill.clock)} time</span></td><td>${number(fill.size, 4)} MON</td><td>${money(fill.price, 6)}</td>${[1000, 5000, 30000].map((h) => { const m = fill.markouts.find((x) => x.horizonMs === h); return `<td>${!m ? "Censored" : m.status === "late" ? "Late" : `<span class="${n(m.bps) < 0 ? "negative" : "positive"}">${n(m.bps).toFixed(2)} bps</span><span class="row-meta">at ${(m.observedAfterMs / 1000).toFixed(1)}s</span>`}</td>`; }).join("")}</tr>`).join("") : '<tr><td colspan="6" class="empty-row">No simulated fills to measure.</td></tr>';
+}
+function renderSignals(edge) {
+  const diagnostics = edge.strategyDiagnostics;
+  const reasons = { warmup: "Waiting for history", insufficient_depth: "Insufficient order-book depth", thin_flow: "Too little traded volume", fast_market: "Price moving too fast", conflicting_signals: "Price, flow or depth check failed", spot_balance: "Spot inventory constraint", ready: "Signals agreed" };
+  $("signalChecks").innerHTML = diagnostics && Object.keys(diagnostics.counts).length ? Object.entries(reasons).map(([key, label]) => row(label, number(diagnostics.counts[key] ?? 0) + " frames")).join("") + '<p class="note">These are sequential eligibility reasons, not independent scores or calibrated probabilities. A ready signal still must pass economic and risk checks.</p>' : '<p class="estimate-empty">Select the Patient candidate in a newer recording to inspect its signal checks.</p>';
+  if (edge.signalQuality?.samples.length) $("signalChecks").innerHTML += edge.signalQuality.horizons.map((h) => row(`${h.horizonMs / 1000}s signed price move after signal`, h.averageSignedBps === null ? "Not measured" : `${n(h.averageSignedBps).toFixed(2)} bps · ${h.measured} samples`)).join("") + '<p class="note">Signals are sampled at least 30 seconds apart. These price moves are not fills or profits, and do not feed the trading rules.</p>';
+  const t = edge.economicGate.touchEconomics;
+  $("touchEconomics").innerHTML = t ? row("Best-price quotes checked", number(t.quotesChecked)) + row("Quotes clearing costs and buffers", number(t.quotesClearing)) + row("Best estimated net edge", t.bestEstimatedNetEdgeUsd === null ? "—" : money(t.bestEstimatedNetEdgeUsd, 5)) + row("Average required capture", t.averageRequiredCaptureBps === null ? "—" : n(t.averageRequiredCaptureBps).toFixed(2) + " bps to midpoint") : '<p class="estimate-empty">Cost-feasibility diagnostics are available in newer reports.</p>';
 }
 function renderRisk(edge) {
   const r = edge.risk, g = edge.config.economicGate, q = edge.config.quotePolicy;
@@ -100,6 +123,11 @@ function renderRisk(edge) {
   const bar = (label, text, value) => `<div class="risk-line"><div class="risk-label"><span>${esc(label)}</span><b>${esc(text)}</b></div><div class="risk-track"><span style="width:${Math.max(0, Math.min(100, n(value)))}%"></span></div></div>`;
   $("riskBars").innerHTML = bar("Session loss", `${money(Math.max(0, -n(edge.netPnlUsd)))} / ${money(r.maxLossUsd, 2)}`, r.lossBudgetUsedPct) + bar("Maximum drawdown", `${pct(edge.maxDrawdownPct)} / ${pct(r.maxDrawdownPct)}`, n(edge.maxDrawdownPct) / n(r.maxDrawdownPct) * 100) + bar("Potential inventory", `${number(r.potentialInventoryMon, 2)} / ${number(r.maxPositionMon)} MON`, n(r.potentialInventoryMon) / n(r.maxPositionMon) * 100) + row("Current inventory", `${number(edge.inventoryMon, 4)} MON`) + row("Cash balance", money(edge.cashUsd)) + (edge.halted ? row("Halt reason", edge.halted) : "");
   $("assumptions").innerHTML = row("Assumed fill fraction", g ? pct(n(g.expectedFillFraction) * 100) + " · uncalibrated" : "Disabled") + row("Adverse price / uncertainty buffer", g ? `${g.adverseSelectionBps} / ${g.uncertaintyBps} bps` : "—") + row("Maker / exit fee assumptions", `${edge.assumptions.makerFeeBps} / ${g?.exitFeeBps ?? "—"} bps`) + row("Minimum estimated profit", money(g?.minNetEdgeUsd)) + row("Rest before ordinary repricing", `${q?.minRestBlocks ?? 0} blocks`) + row("Minimum price change", `${q?.minRepriceBps ?? 0} bps`) + row("Quote expiry", `${edge.config.orderTtlBlocks} blocks`) + row("Inference provider", "Jev not connected") + row("Position leverage", "None · funded spot only");
+  if (edge.liquidationEstimate) {
+    const estimate = edge.liquidationEstimate;
+    $("riskBars").innerHTML += row("Net after estimated exit", estimate.netAfterExitUsd === null ? "Insufficient recorded depth" : money(estimate.netAfterExitUsd));
+  }
+  if (edge.config.patient) $("assumptions").innerHTML += row("Book policy", edge.config.patient.bookPolicy === "veto_opposition" ? "Veto opposing depth" : "Require confirming depth") + row("Long / short signal windows", `${edge.config.patient.lookbackMs / 1000}s / ${edge.config.patient.shortLookbackMs / 1000}s`) + row("Minimum trailing traded volume", `${edge.config.patient.minFlowVolumeMon} MON`);
   $("provenance").innerHTML = `<p>${esc(current.methodology)}</p><p>${esc(current.jev)}</p><p><b>Recording:</b> ${esc(new Date(current.dataset.firstObservedAt).toLocaleString())} – ${esc(new Date(current.dataset.lastObservedAt).toLocaleString())}. ${number(current.dataset.frames)} blocks, ${number(current.dataset.tradePrints)} taker prints. Market move ${pct(current.dataset.marketReturnPct)}.</p><p><b>Source:</b> ${esc(current.dataset.source)}<br><b>Market:</b> <code>${esc(current.dataset.market)}</code><br><b>Dataset SHA-256:</b> <code>${esc(current.dataset.sha256)}</code><br><b>Engine:</b> ${esc(edge.engineVersion)}</p><p>This is a saved research snapshot. Import another comparison report to update it. All money here is simulated; this interface has no trading controls.</p>`;
 }
 $("runSelect").addEventListener("change", render);

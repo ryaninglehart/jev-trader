@@ -88,3 +88,8 @@ Fill markouts run as a separate forward-only diagnostic observer. The first late
 New frames may include `marketTs`, a canonical block timestamp in milliseconds. It must remain present throughout a dataset and never decrease; multiple blocks can share one second. `ts` remains the strictly increasing collector-observation timestamp for compatibility and provenance. Legacy data without `marketTs` retains observation-time diagnostics, explicitly labeled, which may be distorted by backfill speed.
 
 The dashboard accepts only EdgeFoundry comparison reports, escapes imported text, has no signing or order routes, and binds its local server to loopback. Hosted publication contains static assets and explicitly selected simulated reports only. It has no credentials, wallet, collector, or execution process. Reports are snapshots; import a new report to update the view. Source is in `dashboard/`; the original `web/` demo remains separate.
+
+
+## EdgeFoundry v4
+
+V4 adds patient eligibility, independent signal-outcome diagnostics, touch-cost feasibility and depth-based exit estimates. It does not relax the gate or risk settings. Older journals remain tied to their original engine version; export observations and start a new v4 session. See [the strategy protocol](STRATEGY_RESEARCH.md) for the fixed hypotheses and evaluation roles.

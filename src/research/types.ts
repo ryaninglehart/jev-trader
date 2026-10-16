@@ -1,5 +1,5 @@
 export type Side = "buy" | "sell";
-export type StrategyName = "hold" | "maker" | "momentum" | "recorded";
+export type StrategyName = "hold" | "maker" | "momentum" | "patient" | "recorded";
 export type Level = [price: string, size: string];
 
 /** Decimal strings preserve the input precision; timestamps are observation times in milliseconds. */
@@ -77,6 +77,28 @@ export interface EngineConfig {
   queueFactor: string;
   economicGate?: EconomicGateConfig;
   quotePolicy?: QuotePolicy;
+  patient?: PatientConfig;
+}
+
+export interface PatientConfig {
+  bookPolicy?: "confirm" | "veto_opposition";
+  lookbackMs: number;
+  shortLookbackMs: number;
+  minFlowVolumeMon: string;
+  minFlowImbalance: string;
+  minBookImbalance: string;
+  minTrendBps: string;
+  maxTrendBps: string;
+  maxShortMoveBps: string;
+  depthLevels: number;
+}
+export interface SignalDiagnostics {
+  reason: "warmup" | "insufficient_depth" | "thin_flow" | "fast_market" | "conflicting_signals" | "spot_balance" | "ready";
+  trendBps?: string;
+  shortTrendBps?: string;
+  flowVolumeMon?: string;
+  flowImbalance?: string;
+  bookImbalance?: string;
 }
 
 export interface EconomicGateConfig {
@@ -103,7 +125,7 @@ export const defaultConfig: EngineConfig = {
   decisionDeadlineMs: 200, queueFactor: "1",
 };
 
-export interface Intent { action: Side | "hold"; confidence: number; latencyMs: number; aiCostUsd: string }
+export interface Intent { action: Side | "hold"; confidence: number; latencyMs: number; aiCostUsd: string; signal?: SignalDiagnostics }
 export interface Order { side: Side; price: string; remaining: string; queueAhead: string; placedBlock: number }
 export interface Pending { applyBlock: number; side: Side | null; price: string | null; size: string; cancelOrderBlock: number | null }
 

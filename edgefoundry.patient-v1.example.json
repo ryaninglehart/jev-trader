@@ -1,0 +1,60 @@
+{
+  "dataset": {
+    "kind": "dataset",
+    "version": 1,
+    "dataKind": "recorded",
+    "source": "Finalized Monad block snapshots and Kuru Trade logs; costs are explicit simulation assumptions",
+    "market": "0x065C9d28E428A0db40191a54d33d5b7c71a9C394",
+    "chainId": 143,
+    "blockMs": 300,
+    "tickSize": "0.000001",
+    "costs": {
+      "makerFeeBps": "0",
+      "gasLimit": 350000,
+      "gasPriceWei": "102000000000",
+      "aiCostPerDecisionUsd": "0.00002"
+    }
+  },
+  "engine": {
+    "strategy": "patient",
+    "initialCashUsd": "100",
+    "initialMon": "0",
+    "orderSizeMon": "200",
+    "maxPositionMon": "400",
+    "maxLossUsd": "1",
+    "maxDrawdownPct": 1,
+    "minConfidence": 0.6,
+    "minSpreadBps": 2,
+    "maxSpreadBps": 100,
+    "quoteInsideTicks": 0,
+    "latencyBlocks": 1,
+    "orderTtlBlocks": 30,
+    "decisionDeadlineMs": 200,
+    "queueFactor": "1",
+    "economicGate": {
+      "enabled": true,
+      "expectedFillFraction": "0.1",
+      "adverseSelectionBps": "5",
+      "exitFeeBps": "5",
+      "uncertaintyBps": "2",
+      "minNetEdgeUsd": "0.0005",
+      "inferenceBudgetUsd": "0.00002"
+    },
+    "quotePolicy": {
+      "minRestBlocks": 5,
+      "minRepriceBps": "2",
+      "minReplacementImprovementUsd": "0.0005"
+    },
+    "patient": {
+      "lookbackMs": 30000,
+      "shortLookbackMs": 5000,
+      "minFlowVolumeMon": "200",
+      "minFlowImbalance": "0.2",
+      "minBookImbalance": "0.15",
+      "minTrendBps": "1",
+      "maxTrendBps": "50",
+      "maxShortMoveBps": "20",
+      "depthLevels": 3
+    }
+  }
+}

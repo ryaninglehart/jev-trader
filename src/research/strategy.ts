@@ -1,10 +1,12 @@
 import { dec } from "./ledger";
 import type { EngineConfig, Frame, Intent } from "./types";
+import { patientIntent } from "./patient";
 
 /** Only the current observation and earlier observations are passed to the strategy. */
-export function decide(frame: Frame, mids: readonly string[], inventory: string, config: EngineConfig): Intent {
+export function decide(frame: Frame, mids: readonly string[], inventory: string, config: EngineConfig, history: readonly Frame[] = []): Intent {
   const plain = (action: Intent["action"], confidence = 1): Intent => ({ action, confidence, latencyMs: 0, aiCostUsd: "0" });
   if (config.strategy === "hold") return plain("hold");
+  if (config.strategy === "patient") return patientIntent(frame, history, inventory, config);
   if (config.strategy === "recorded") {
     if (!frame.decision) throw new Error(`recorded strategy requires a decision on block ${frame.block}`);
     return { ...frame.decision, aiCostUsd: frame.decision.costUsd ?? "0" };
