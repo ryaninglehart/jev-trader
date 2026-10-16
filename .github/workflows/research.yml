@@ -14,6 +14,8 @@ jobs:
       - run: bun run typecheck
       - run: bun test tests
       - run: bun run backtest --input fixtures/synthetic.jsonl --out /tmp/jev-report.json
+      - run: bun run edgefoundry:compare --input fixtures/synthetic.jsonl --out /tmp/edgefoundry-comparison.json
+      - run: bun build dashboard/app.js --target browser --outdir /tmp/edgefoundry-dashboard
       - run: bun run paper:compare --input fixtures/synthetic.jsonl --out /tmp/jev-comparison.json
       - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-paper-report.json
       - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-resumed-report.json

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "jev-trader",
+      "name": "edgefoundry",
       "dependencies": {
         "@ai-sdk/typesafe-ai": "^3.0.0",
         "@kuru-labs/kuru-sdk": "^0.0.95",

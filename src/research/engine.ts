@@ -2,10 +2,12 @@ import { dec, Ledger } from "./ledger";
 import { decide } from "./strategy";
 import type { DatasetHeader, EngineConfig, Execution, Frame, Order, Pending, Side } from "./types";
 import { invariant, validateConfig, validateFrame, validateHeader } from "./validation";
+import { economicEstimate, type GateDecision } from "./economics";
+import { FillQualityTracker } from "./fill-quality";
 
 export const midOf = (f: Frame) => dec(f.bids[0]![0]).add(f.asks[0]![0]).div(2).toString();
 // Bump when execution/accounting semantics change; older journals must use their original engine.
-export const ENGINE_VERSION = "research-v2";
+export const ENGINE_VERSION = "edgefoundry-v3";
 
 /**
  * One deterministic engine for replay and paper trading. Each block:
@@ -34,6 +36,10 @@ export class Engine {
   private firstBlock = 0;
   private intentCount = 0;
   private lastEquity = dec(0);
+  readonly fillQuality = new FillQualityTracker();
+  private gateAudit: GateDecision[] = [];
+  private gateCounts = { evaluated: 0, accepted: 0, blocked: 0, retained: 0 };
+  private quoteCounts = { unchanged: 0, minimumRest: 0, smallPriceMove: 0, insufficientImprovement: 0, economicRetention: 0, cancellations: 0 };
 
   constructor(readonly header: DatasetHeader, readonly config: EngineConfig, warmupMids: string[] = []) {
     validateHeader(header); validateConfig(config);
@@ -66,6 +72,7 @@ export class Engine {
     this.frames++;
     this.fillResting(frame);
     this.settle(frame);
+    this.fillQuality.observe(frame);
     this.mids.push(mid);
     if (this.mids.length > 100) this.mids.shift();
     const intent = decide(frame, this.mids, this.ledger.mon.toString(), this.config);
@@ -84,12 +91,41 @@ export class Engine {
     const expired = this.active && frame.block - this.active.placedBlock >= this.config.orderTtlBlocks;
     // An in-flight inference is not a fresh hold/cancel instruction. Keep the existing
     // quote only until its TTL; risk stops still cancel it.
-    if (this.config.strategy === "recorded" && frame.decision?.status === "pending" && !this.halted && !expired && spread >= this.config.minSpreadBps && spread <= this.config.maxSpreadBps) return;
+    if (this.config.strategy === "recorded" && frame.decision?.status === "pending" && !this.halted && !expired && spread >= this.config.minSpreadBps && spread <= this.config.maxSpreadBps) {
+      const o = this.active, g = this.config.economicGate;
+      const noncrossing = !o || (o.side === "buy" ? dec(o.price).lt(frame.asks[0]![0]) : dec(o.price).gt(frame.bids[0]![0]));
+      if (noncrossing && (!o || !g?.enabled || economicEstimate(this.header, frame, o.side, o.price, o.remaining, g, true).accepted)) return;
+    }
     if (expired) side = null; // cancellation is a charged, delayed transaction
     const price = side ? this.quotePrice(side, frame) : null;
-    if (side && this.active?.side === side && this.active.price === price) return; // no needless cancel/repost
+    const gate = this.config.economicGate?.enabled ? this.config.economicGate : undefined;
+    const old = this.active;
+    const retention = side && old?.side === side && gate ? economicEstimate(this.header, frame, side, old.price, old.remaining, gate, true) : null;
+    const safeToKeep = side && old?.side === side && (side === "buy" ? dec(old.price).lt(frame.asks[0]![0]) : dec(old.price).gt(frame.bids[0]![0])) && (!retention || retention.accepted);
+    if (safeToKeep && old!.price === price) { this.quoteCounts.unchanged++; return; }
+    const estimate = side && gate ? economicEstimate(this.header, frame, side, price!, this.config.orderSizeMon, gate) : null;
+    if (side && this.config.quotePolicy && safeToKeep) {
+      const q = this.config.quotePolicy;
+      const changeBps = dec(price!).sub(old!.price).abs().div(old!.price).mul(10_000);
+      let reason: "minimumRest" | "smallPriceMove" | "insufficientImprovement" | null = null;
+      if (frame.block - old!.placedBlock < q.minRestBlocks) reason = "minimumRest";
+      else if (changeBps.lt(q.minRepriceBps)) reason = "smallPriceMove";
+      else if (estimate && retention && dec(estimate.expectedNetEdgeUsd).sub(retention.expectedNetEdgeUsd).lt(q.minReplacementImprovementUsd)) reason = "insufficientImprovement";
+      if (reason) {
+        this.quoteCounts[reason]++;
+        if (estimate) this.auditGate({ ...estimate, block: frame.block, side, price: price!, outcome: "retained", reason });
+        return;
+      }
+    }
+    if (side && estimate) {
+      const keep = !estimate.accepted && safeToKeep;
+      this.auditGate({ ...estimate, block: frame.block, side, price: price!, outcome: estimate.accepted ? "accepted" : keep ? "retained" : "blocked", reason: estimate.accepted ? "estimated edge covers costs and buffers" : "estimated edge below costs and buffers" });
+      if (keep) { this.quoteCounts.economicRetention++; return; }
+      if (!estimate.accepted) side = null;
+    }
     if (side && !this.canSubmit(side, price!, mid)) side = null;
     if (!side && !this.active) return;
+    if (!side) this.quoteCounts.cancellations++;
     const delay = frame.decision?.availableBlock === frame.block
       ? this.config.latencyBlocks // inference already elapsed before this frame; do not count it twice
       : Math.max(this.config.latencyBlocks, Math.ceil(intent.latencyMs / this.header.blockMs));
@@ -170,6 +206,7 @@ export class Engine {
       const qty = available.lt(o.remaining) ? available : dec(o.remaining);
       this.ledger!.fill(o.side, qty.toString(), o.price, this.header.costs.makerFeeBps);
       this.fills++;
+      this.fillQuality.add(f, o.side, o.price, qty.toString(), this.header.costs.makerFeeBps);
       this.filledOrders.add(o.placedBlock);
       this.event({ block: f.block, type: "fill", side: o.side, price: o.price, size: qty.toString() });
       o.remaining = dec(o.remaining).sub(qty).toString();
@@ -191,6 +228,11 @@ export class Engine {
   }
 
   private event(e: Execution) { this.executions.push(e); }
+  private auditGate(e: GateDecision) {
+    this.gateCounts.evaluated++; this.gateCounts[e.outcome]++;
+    this.gateAudit.push(e);
+    if (this.gateAudit.length > 200) this.gateAudit.shift();
+  }
 
   report() {
     invariant(this.ledger && this.previous, "no frames to report");
@@ -220,6 +262,13 @@ export class Engine {
       orderFillRate: this.placed ? this.filledOrders.size / this.placed : 0,
       inventoryMon: l.mon.toString(), cashUsd: l.cash.toString(),
       halted: this.halted, active: this.active, pending: this.pending,
+      liveTradingEnabled: false,
+      economicGate: { enabled: this.config.economicGate?.enabled ?? false, ...this.gateCounts, assumptions: this.config.economicGate ?? null, recentDecisions: this.gateAudit.map((x) => ({ ...x })), methodology: "Current-mid spread capture with an explicit assumed fill fraction; no predicted directional alpha. Reserve full entry, cancellation and exit gas, fees, inference and adverse-selection/uncertainty buffers. Estimates are decision filters, not realized profit or calibrated probabilities. Retained quotes exclude sunk placement and inference costs." },
+      quotePolicy: { ...this.quoteCounts, assumptions: this.config.quotePolicy ?? null },
+      fillQuality: this.fillQuality.report(),
+      risk: { maxLossUsd: this.config.maxLossUsd, maxDrawdownPct: this.config.maxDrawdownPct, maxPositionMon: this.config.maxPositionMon,
+        potentialInventoryMon: l.mon.add(this.active?.side === "buy" ? this.active.remaining : "0").add(this.pending?.side === "buy" ? this.pending.size : "0").toString(),
+        lossBudgetUsedPct: net.lt(0) ? net.neg().div(this.config.maxLossUsd).mul(100).toString() : "0" },
       accounting: "Marked to mid; no terminal liquidation. Quote-currency maker fees. Gas purchased at inclusion mid. Net P&L includes estimated gas reserves for pending inclusion and terminal cancellation; settledNetPnlUsd excludes these provisions.",
       assumptions: this.header.costs, config: this.config,
     };

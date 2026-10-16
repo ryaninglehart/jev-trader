@@ -62,7 +62,7 @@ try {
     const tag = "0x" + next.toString(16);
     const [book, gasBlock] = await Promise.all([
       readBook(chainConfig.readRpcUrl, chainConfig.market, market.params, { vault: true, blockTag: tag, timeoutMs: 5000 }),
-      rpc<{ baseFeePerGas?: string; hash: string; parentHash: string }>("eth_getBlockByNumber", [tag, false], chainConfig.readRpcUrl),
+      rpc<{ baseFeePerGas?: string; hash: string; parentHash: string; timestamp: string }>("eth_getBlockByNumber", [tag, false], chainConfig.readRpcUrl),
     ]);
     invariant(book.block === next, "RPC book snapshot block differs from requested finalized block");
     await feed.poll(next);
@@ -72,6 +72,7 @@ try {
     const gasPriceWei = (BigInt(gasBlock.baseFeePerGas) + BigInt(Math.round(chainConfig.priorityFeeGwei * 1e9))).toString();
     const frame: Frame = {
       kind: "frame", block: next, ts: Date.now(),
+      marketTs: parseInt(gasBlock.timestamp, 16) * 1000,
       blockHash: gasBlock.hash, parentHash: gasBlock.parentHash,
       bids: book.levels.bids.map(([p, s]) => [dec(p).toFixed(), dec(s).toFixed()]),
       asks: book.levels.asks.map(([p, s]) => [dec(p).toFixed(), dec(s).toFixed()]),

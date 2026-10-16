@@ -1,4 +1,4 @@
-# Jev Trader: research and paper-trading fork
+# EdgeFoundry
 
 A reproducible trading research foundation derived from [jarrodwatts/jev-trader](https://github.com/jarrodwatts/jev-trader), upstream commit `d6254bf`.
 
@@ -13,6 +13,27 @@ A reproducible trading research foundation derived from [jarrodwatts/jev-trader]
 - A chronological development/test split selects a momentum confidence threshold using development results only. Reports include hold/maker baselines and doubled gas/latency/queue sensitivity checks.
 - Paper sessions persist inputs before applying them and rebuild their complete state on restart. Concurrent writers, configuration changes, broken block continuity, duplicate trade logs and truncated journals fail closed.
 - The recorder reads finalized block-pinned books, block hashes and trade logs. It never signs or submits trades.
+
+## EdgeFoundry: economic gate and dashboard
+
+The recommended research profile is `edgefoundry.example.json`. It starts with $100 simulated cash, a $1 session loss stop, 1% maximum drawdown, 400 MON potential-position cap, and no borrowing. These are paper-research defaults, not a calibrated investment mandate. Execution delay means a stop is not a guaranteed loss ceiling.
+
+```sh
+bun run paper --config edgefoundry.example.json --state data/edgefoundry.jsonl --blocks 1500 --out data/edgefoundry-paper.json
+bun run paper:export --state data/edgefoundry.jsonl --out data/edgefoundry-market.jsonl
+bun run edgefoundry:compare --input data/edgefoundry-market.jsonl --out data/edgefoundry-comparison.json
+bun run dashboard --report data/edgefoundry-comparison.json
+```
+
+Open the printed local address. The read-only dashboard shows performance curves, costs, baseline comparisons, gate decisions with their arithmetic, 1/5/30-second fill markouts, and risk/assumption panels. Import a comparison JSON to inspect it locally in the browser; download preserves the report. The hosted private version is a saved snapshot, not a continuously running bot. Neither UI has trading routes or live-enablement controls.
+
+The **economic gate** discounts current-mid spread capture by an explicit assumed filled-quantity fraction (10%), then subtracts entry/exit fees, adverse-selection and uncertainty reserves, three full transaction budgets (placement, cancellation, eventual exit), and an inference allocation. A partial fill can require a full exit transaction; gas is never scaled down by filled quantity. A quote must clear the configured minimum net edge. These are conservative, uncalibrated assumptions; no model confidence is interpreted as a fill probability or future return. The expected costs are filters and are not added to actual ledger costs.
+
+The **quote policy** retains safe same-side quotes through a minimum rest period or small price changes, preserving queue position. With the gate enabled, replacement also needs enough incremental expected value to cover new costs. Hold/low-confidence/deadline/risk/spread/expiry conditions still request cancellation, and adverse or crossing old prices cannot be retained just to save gas. Pending Jev inference cannot override those checks. The profile extends expiry from 5 to 30 blocks; the comparison labels that change explicitly.
+
+The **fill diagnostics** measure signed fill-price-to-future-mid returns at 1, 5 and 30 seconds. Positive favors the maker. Each partial fill is tracked; aggregates weight by filled notional. Missing end-of-window horizons are censored, and snapshots more than 1 second late are excluded from aggregates. New recordings use canonical block timestamps (1-second resolution); older recordings fall back to collector observation time. Markouts never feed future information back into trading decisions.
+
+`edgefoundry:compare` runs fixed original-cadence, reduced-replacement, full-gate and cash-hold variants on identical inputs and capital/risk limits. It includes doubled gas/latency/queue and 5-bps fee scenarios. It does not select parameters. `research.example.json` remains available for legacy baseline reproduction; opt-in settings preserve those experiments. Jev remains an optional inference adapter and still requires a TypeSafe API key.
 
 ## Quick start: offline verification
 
@@ -81,6 +102,6 @@ Open inventory is **marked to mid, not liquidated**. Exit fees, price impact and
 
 The initial MON position is funded capital valued at the first observed mid. Simulated gas is purchased at each inclusion block's MON mid and charged against USD cash; this is an explicit reporting convention, not a representation of a real gas-wallet balance. No borrowing or short selling is modeled.
 
-Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `research-v2`; v1 journals must be exported with their original version and replayed as datasets into a new v2 session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
+Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `edgefoundry-v3`; older journals must be exported with their original version and replayed as datasets into a new session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
 
 See [the research specification](SPEC.md) and [accounting and execution details](docs/METHODOLOGY.md) for limits and the live-enablement work still required.

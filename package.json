@@ -1,5 +1,5 @@
 {
-  "name": "jev-trader",
+  "name": "edgefoundry",
   "module": "src/research/engine.ts",
   "type": "module",
   "private": true,
@@ -28,6 +28,8 @@
     "test": "bun test tests",
     "typecheck": "bun node_modules/typescript/bin/tsc --noEmit && bun node_modules/typescript/bin/tsc --noEmit -p tsconfig.research.json",
     "demo": "bun run src/index.ts",
-    "dev": "bun --watch run scripts/paper.ts"
+    "dev": "bun --watch run scripts/paper.ts",
+    "edgefoundry:compare": "bun run scripts/compare-edgefoundry.ts",
+    "dashboard": "bun run scripts/dashboard.ts"
   }
 }

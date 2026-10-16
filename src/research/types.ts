@@ -7,6 +7,8 @@ export interface Frame {
   kind: "frame";
   block: number;
   ts: number;
+  /** Canonical block timestamp in ms when available; ts remains collector observation time. */
+  marketTs?: number;
   blockHash?: string;
   parentHash?: string;
   bids: Level[];
@@ -73,6 +75,24 @@ export interface EngineConfig {
   decisionDeadlineMs: number;
   /** Multiply observed queue depth by this factor. 1 is the conservative default. */
   queueFactor: string;
+  economicGate?: EconomicGateConfig;
+  quotePolicy?: QuotePolicy;
+}
+
+export interface EconomicGateConfig {
+  enabled: boolean;
+  /** Assumed fraction of order quantity filled, NOT a calibrated model probability. */
+  expectedFillFraction: string;
+  adverseSelectionBps: string;
+  exitFeeBps: string;
+  uncertaintyBps: string;
+  minNetEdgeUsd: string;
+  inferenceBudgetUsd: string;
+}
+export interface QuotePolicy {
+  minRestBlocks: number;
+  minRepriceBps: string;
+  minReplacementImprovementUsd: string;
 }
 
 export const defaultConfig: EngineConfig = {

@@ -123,3 +123,6 @@ This fork replaces the upstream promotional demo goal with reproducible evaluati
 - Run bun run typecheck and bun test tests, plus relevant CLI smoke checks, before publishing changes.
 - Jev keys belong only in local environment variables; never fall back to a mock in the research collector or label transport fixtures as real Jev output. Restore both paper and inference ledgers, and preserve final unapplied inference costs on export.
 - Live enablement requires a separately reviewed exchange adapter with startup reconciliation, idempotent receipt/fill handling, actual fee settlement, and independent cancellation controls.
+
+- EdgeFoundry dashboard lives in dashboard/ and reads comparison reports; it must remain read-only. No order, wallet or live-enablement routes.
+- Economic gate assumptions must remain explicit; fill markouts are forward-only diagnostics, never future inputs to decisions.

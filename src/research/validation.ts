@@ -39,10 +39,24 @@ export function validateConfig(c: EngineConfig) {
   invariant(Number.isFinite(c.minSpreadBps) && Number.isFinite(c.maxSpreadBps) && c.minSpreadBps >= 0 && c.maxSpreadBps >= c.minSpreadBps, "invalid spread limits");
   invariant(Number.isFinite(c.maxDrawdownPct) && c.maxDrawdownPct > 0 && c.maxDrawdownPct <= 100, "invalid maxDrawdownPct");
   invariant(Number.isFinite(c.decisionDeadlineMs) && c.decisionDeadlineMs > 0, "invalid decisionDeadlineMs");
+  if (c.economicGate !== undefined) {
+    const g = c.economicGate;
+    invariant(g && typeof g.enabled === "boolean", "economicGate.enabled must be boolean");
+    for (const k of ["expectedFillFraction", "adverseSelectionBps", "exitFeeBps", "uncertaintyBps", "minNetEdgeUsd", "inferenceBudgetUsd"] as const) amount(g[k], `economicGate.${k}`);
+    invariant(dec(g.expectedFillFraction).gt(0) && dec(g.expectedFillFraction).lte(1), "expectedFillFraction must be (0,1]");
+    invariant(Object.keys(g).every((k) => ["enabled", "expectedFillFraction", "adverseSelectionBps", "exitFeeBps", "uncertaintyBps", "minNetEdgeUsd", "inferenceBudgetUsd"].includes(k)), "unknown economic gate setting");
+  }
+  if (c.quotePolicy !== undefined) {
+    const q = c.quotePolicy;
+    invariant(q && Number.isSafeInteger(q.minRestBlocks) && q.minRestBlocks >= 0 && q.minRestBlocks < c.orderTtlBlocks, "minRestBlocks must be below order TTL");
+    amount(q.minRepriceBps, "minRepriceBps"); amount(q.minReplacementImprovementUsd, "minReplacementImprovementUsd");
+    invariant(Object.keys(q).every((k) => ["minRestBlocks", "minRepriceBps", "minReplacementImprovementUsd"].includes(k)), "unknown quote policy setting");
+  }
 }
 export function validateFrame(f: Frame, previous?: Frame) {
   invariant(f.kind === "frame" && Number.isSafeInteger(f.block) && f.block >= 1, "invalid block");
   invariant(Number.isSafeInteger(f.ts) && f.ts > 0, "invalid timestamp");
+  if (f.marketTs !== undefined) invariant(Number.isSafeInteger(f.marketTs) && f.marketTs > 0, "invalid market timestamp");
   if (f.blockHash !== undefined || f.parentHash !== undefined) {
     invariant(typeof f.blockHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(f.blockHash) && typeof f.parentHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(f.parentHash), "invalid block hashes");
     if (previous?.blockHash) invariant(f.parentHash.toLowerCase() === previous.blockHash.toLowerCase(), "canonical block continuity changed");
@@ -50,6 +64,8 @@ export function validateFrame(f: Frame, previous?: Frame) {
   if (previous) {
     invariant(f.block === previous.block + 1, "missing, duplicate or reordered block; stop and start a new recording");
     invariant(f.ts > previous.ts, "timestamps must increase");
+    invariant((f.marketTs === undefined) === (previous.marketTs === undefined), "market timestamp coverage changed");
+    if (f.marketTs !== undefined) invariant(f.marketTs >= previous.marketTs!, "market timestamps must not decrease");
   }
   for (const side of ["bids", "asks"] as const) {
     invariant(Array.isArray(f[side]) && f[side].length > 0, `empty ${side}`);
