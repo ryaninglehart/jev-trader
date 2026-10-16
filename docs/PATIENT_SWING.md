@@ -69,3 +69,59 @@ chronological boundaries, policy, training examples, cost assumptions and both
 scenarios are reported. Previously viewed data remains retrospective even when
 the chronological split is clean. Synthetic tests verify execution but are never
 published as historical returns. No automatic promotion or forward activation.
+
+## Additional historical training archive
+
+The separately authorized history extension collects a fixed fourteen-day window,
+2026-10-02 06:15 UTC through 2026-10-16 06:15 UTC, from the official free Goldsky
+public Monad archive endpoint. No account, paid resource or trading key is used.
+`scripts/collect-swing-history.ts` maintains its own SQLite cache and PID lock;
+restart with the identical arguments to resume cached observations. Never use an
+active cloud journal as its output. Cached responses and bars have SHA-256 digests;
+missing ranges, changed values and malformed observations fail closed.
+
+For each of 4,032 five-minute candles it finds the first canonical block at the
+boundary, obtains the immediately preceding book midpoint, and sums the complete
+Kuru Trade log range. Boundary and next-block depth, fees and minimum order sizes
+are read with block-pinned Multicall3. Gas is the block base fee plus the same
+2 gwei priority allowance. Parent relationships are checked. An extra hour of
+archive overlap is independently compared with the original full-block recording
+for midpoints, trade flow, books and costs. Original float-converted trade sizes
+have a 0.000001 MON absolute comparison tolerance; archive quantities use Decimal.
+
+This archive is calibration-only, not a continuous execution tape. Snapshot ts
+uses canonical block time and may repeat across blocks in the same second. It is
+never passed into the execution engine. The first 60% supplies the frozen fit;
+two-hour separated labels must mature before that cutoff. The last 40% supplies
+heldout directional price-label diagnostics only, not simulated strategy returns.
+There is no threshold search, risk change, shortened horizon or model refit.
+
+The same original 181,708-block, 15.296-hour verification copy is replayed, with
+its final 40% (6.119 hours) remaining the execution evaluation. Its initial 60%
+warms the signal clock; no trades occur before evaluation. Historical training
+ends before that recording starts. More training data does not make this short
+execution evaluation a multi-day strategy backtest or establish a durable edge.
+The initial two-example report is retained separately and summarized on the UI.
+
+```sh
+bun --no-env-file scripts/collect-swing-history.ts \
+  --state data/swing-history-20261016/archive.sqlite \
+  --out ../../outputs/edgefoundry-swing-history-14d.json \
+  --status ../../outputs/edgefoundry-swing-history-status.json
+bun --no-env-file scripts/backtest-swing.ts \
+  --state data/cloud-migration/verification-selective-20261016-2142.sqlite \
+  --history ../../outputs/edgefoundry-swing-history-14d.json \
+  --previous ../../outputs/edgefoundry-patient-swing-v1-initial-15h.json \
+  --out ../../outputs/edgefoundry-patient-swing-v1-backtest.json
+```
+
+Raw archival books, logs, journals and cache remain local. Only the sanitized
+result, evidence counts, provenance digests and methodology go to the private
+dashboard. Both cloud branches, runtime digests and checkpoint chains are left
+unchanged. Future heartbeat publications retain this fixed offline result and
+do not extend, refit or launch Patient Swing automatically.
+
+Public primary documentation:
+- https://docs.monad.xyz/developer-essentials/historical-data
+- https://docs.monad.xyz/developer-essentials/network-information
+- https://docs.kuru.io/contracts/Integration

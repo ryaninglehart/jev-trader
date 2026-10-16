@@ -37,15 +37,19 @@ export interface SwingModel { trainedThrough:number; samples:number; successfulN
 export function fitSwingModel(frames:readonly Frame[],cutoff:number,depthFactor=1):SwingModel {
  const clock=new CandleClock(),bars:Bar[]=[];
  for(const f of frames){if(frameTime(f)>=cutoff)break;const b=clock.observe(f);if(b)bars.push(b);}
- const rows:SwingModel['samplesDetail']=[];let last=-Infinity;
  const byBlock=new Map(frames.filter(f=>frameTime(f)<cutoff).map(f=>[f.block,f]));
+ return fitSwingBars(bars,byBlock,cutoff,depthFactor);
+}
+/** Same calibration on independently archived exact candles, never execution inputs. */
+export function fitSwingBars(bars:readonly Bar[],byBlock:ReadonlyMap<number,Frame>,cutoff:number,depthFactor=1):SwingModel {
+ const rows:SwingModel['samplesDetail']=[];let last=-Infinity;
  for(let i=12;i<bars.length;i++){
-  const b=bars[i]!;if(!swingSignal(bars.slice(0,i+1))||b.end-last<swingPolicy.horizonMs)continue;
+  const b=bars[i]!;if(frameTime(b.trigger)>=cutoff)continue;if(!swingSignal(bars.slice(0,i+1))||b.end-last<swingPolicy.horizonMs)continue;
   const future=bars.find(x=>x.end>=b.end+swingPolicy.horizonMs);
   // Purge labels that touch/cross evaluation. No unfinished label becomes zero.
   if(!future||frameTime(future.trigger)>=cutoff)continue;
   const spread=dec(b.trigger.asks[0]![0]).sub(b.trigger.bids[0]![0]).div(midOf(b.trigger)).mul(10000);if(spread.lt(2)||spread.gt(100))continue;
-  const next=byBlock.get(b.trigger.block+1);if(!next)continue;
+  const next=byBlock.get(b.trigger.block+1);if(!next||frameTime(next)>=cutoff)continue;
   const quote=walk(next,'buy',depthFactor),limit=dec(walk(b.trigger,'buy',depthFactor).price).mul(dec(1).add(dec(swingPolicy.slippageBps).div(10000)));
   const success=quote.complete&&dec(quote.price).lte(limit)&&!!next.marketCosts&&dec(next.marketCosts.minSizeMon).lte(swingPolicy.sizeMon);
   rows.push({at:b.end,labelAt:future.end,moveBps:dec(future.close).div(b.close).sub(1).mul(10000).toString(),success});last=b.end;
