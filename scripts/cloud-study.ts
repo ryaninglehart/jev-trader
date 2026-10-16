@@ -172,6 +172,7 @@ async function segment(plan: Plan, root: string, state: string, reportPath: stri
   const audit = await verify(root, state, readJson(reportPath)); invariant(audit.lastBlock >= plan.minimumBlock, "cutover prefix missing");
   if (readJson(reportPath).runStatus === "completed") { console.log("Study already completed; no collector started."); return; }
   invariant(readJson(reportPath).runStatus !== "failed" && readJson(reportPath).lastError === null, "saved collector failure requires investigation; refusing automatic resume");
+  if (remote.sequence === 0) invariant(readJson(reportPath).runStatus === "interrupted" && readJson(reportPath).lastBlock === remote.lastBlock, "initial cloud cutover requires the final stopped-writer report");
   const cleanEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin", DRY_RUN: "true" };
   const log = Bun.file(resolve(dirname(state), "collector.log"));
   const child = Bun.spawn([process.execPath, "--no-env-file", "run", "scripts/multiday.ts", "--state", state, "--out", reportPath], { cwd: root, env: cleanEnv, stdin: "ignore", stdout: log, stderr: log });

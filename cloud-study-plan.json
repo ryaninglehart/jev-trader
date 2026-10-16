@@ -1,9 +1,9 @@
 {
   "repository": "ryaninglehart/jev-trader",
   "releaseId": 415121212,
-  "seedName": "edgefoundry-cloud-preflight.efc",
-  "seedSha256": "6c774afe86bf14dd9103eb8bfbed938c78ab164afa1001b20e07e50cc332b587",
+  "seedName": "edgefoundry-cloud-cutover.efc",
+  "seedSha256": "fb86bc7dd5bc53343ed3ec9c0ebf18d69a56cca061885880a2c5d348d4cfed3f",
   "namespace": "edgefoundry-20261016-72h",
-  "minimumBlock": 113925853,
-  "mode": "preflight"
+  "minimumBlock": 113927942,
+  "mode": "active"
 }
