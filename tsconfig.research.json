@@ -14,6 +14,8 @@
     "scripts/dashboard.ts",
     "scripts/multiday.ts",
     "scripts/study-bundle.ts",
-    "scripts/cloud-study.ts"
+    "scripts/cloud-study.ts",
+    "scripts/compare-selective.ts",
+    "scripts/selective-cloud.ts"
   ]
 }
