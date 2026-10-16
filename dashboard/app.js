@@ -23,7 +23,9 @@ function acceptData(data) {
   const candidate = data.schema === "edgefoundry-dashboard-v1" ? data : { schema: "edgefoundry-dashboard-v1", runs: [{ label: "Imported recording", report: data }] };
   if (!Array.isArray(candidate.runs) || !candidate.runs.length || candidate.runs.length > 20) throw new Error("Report must contain 1–20 recordings.");
   candidate.runs.forEach((run) => validateReport(run.report));
+  if (candidate.multiday && (candidate.multiday.schema !== "edgefoundry-multiday-v1" || candidate.multiday.liveTradingEnabled !== false || !Array.isArray(candidate.multiday.arms))) throw new Error("Invalid multi-day study.");
   bundle = candidate;
+  renderMultiDay(candidate.multiday);
   $("runSelect").innerHTML = candidate.runs.map((run, i) => `<option value="${i}">${esc(run.label || `Recording ${i + 1}`)}</option>`).join("");
   $("runSelect").value = String(candidate.runs.length - 1);
   $("downloadButton").disabled = false; $("workspace").hidden = false; $("empty").hidden = true;
@@ -148,3 +150,18 @@ $("downloadButton").addEventListener("click", () => {
 document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", () => { document.querySelectorAll("nav a").forEach((x) => x.classList.remove("selected")); a.classList.add("selected"); }));
 try { const response = await fetch("./report.json", { cache: "no-store" }); if (!response.ok) throw new Error("No saved report is available."); acceptData(await response.json()); }
 catch (e) { $("empty").hidden = false; $("notice").textContent = `${e.message} Use Import report to open a comparison.`; }
+
+function renderMultiDay(study) {
+  $("multiday").hidden = !study; if (!study) return;
+  const hours = n(study.elapsedMarketHours), target = study.protocol.durationMs / 3600000;
+  const updated = new Date(study.updatedAt), age = Math.max(0, (Date.now() - updated.getTime()) / 60000);
+  $("studyStatus").textContent = study.runStatus === "completed" ? "COMPLETED" : study.runStatus === "failed" ? "NEEDS ATTENTION" : study.runStatus === "development-replay" ? "DEVELOPMENT REPLAY" : study.runStatus === "interrupted" ? "PAUSED" : study.runStatus === "retrying" ? "RETRYING DATA FEED" : "IN PROGRESS AT LAST SNAPSHOT";
+  $("studyTiming").textContent = `${hours.toFixed(2)} of ${target} market hours observed · ${number(study.frames)} consecutive blocks · ${number(study.tradePrints)} trade prints. Snapshot ${updated.toLocaleString()}.`;
+  const p = study.primary;
+  $("studyMetrics").innerHTML = row("Main portfolio · net after estimated exit", p.liquidationEstimate.netAfterExitUsd === null ? "Unresolved" : money(p.liquidationEstimate.netAfterExitUsd)) + row("Main orders / fills", `${number(p.attempts)} / ${number(p.fills)}`) + row("Risk controls", "$1 loss · 1% drawdown · 400 MON cap") + row("Scheduled market window end", new Date(study.scheduledEndAt).toLocaleString());
+  $("studyRows").innerHTML = study.arms.map(a => `<tr><td>${a.horizonMinutes} min<span class="row-meta">${a.scenario.gas === 1 ? "Full displayed queue · standard gas" : "Double queue · double gas"}</span></td><td>${a.netAfterEstimatedExitUsd === null ? "Unresolved exit" : money(a.netAfterEstimatedExitUsd)}<span class="row-meta">All attempts and costs included</span></td><td>${number(a.completedOrders)} / ${a.anyFillRate === null ? "Awaiting outcomes" : pct(a.anyFillRate * 100)}<span class="row-meta">Quantity filled: ${a.completedOrderFillFraction === null ? "—" : pct(a.completedOrderFillFraction * 100)}</span></td><td>${number(a.roundTrips)}<span class="row-meta">${number(a.wins)} positive · ${number(a.losses)} negative</span></td><td>${number(a.inventoryMon, 4)} MON<span class="row-meta">${esc(a.halted || (a.unresolvedInventory ? "Position open" : a.pendingOrder ? "Entry pending" : "Waiting for signal"))}</span></td></tr>`).join("");
+  const cost = study.costs;
+  $("studyCosts").innerHTML = row("Observed transaction budget range", `${money(cost.transactionBudgetUsd.min, 5)} – ${money(cost.transactionBudgetUsd.max, 5)}`) + row("Public fee snapshots", number(cost.feeObservations)) + row("Latest observed maker / taker fee", cost.latestMarketCosts ? `${cost.latestMarketCosts.makerFeeBps} / ${cost.latestMarketCosts.takerFeeBps} bps` : "No fee observations in this recording") + row("Exit fee floor", `${p.config.economicGate.exitFeeBps} bps`);
+  $("studyConclusion").textContent = `${study.conclusion} ${study.lastError ? "Collector issue: " + study.lastError + ". " : ""}${age > 10 ? "This hosted snapshot is older than 10 minutes; it does not confirm the collector is still running. " : ""}Updated periodically, not a live connection to the collector.`;
+  $("studyProvenance").textContent = `${cost.methodology} Journal digest: ${study.journalDigest || "offline replay"}. Frozen source: ${study.identity?.sourceDigest || "unavailable"}.`;
+}

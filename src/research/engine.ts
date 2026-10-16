@@ -1,3 +1,4 @@
+import { makerFee } from "./execution-costs";
 import { dec, Ledger } from "./ledger";
 import { decide } from "./strategy";
 import type { DatasetHeader, EngineConfig, Execution, Frame, Order, Pending, Side, SignalDiagnostics } from "./types";
@@ -10,7 +11,7 @@ import { SignalQualityTracker } from "./signal-quality";
 
 export const midOf = (f: Frame) => dec(f.bids[0]![0]).add(f.asks[0]![0]).div(2).toString();
 // Bump when execution/accounting semantics change; older journals must use their original engine.
-export const ENGINE_VERSION = "edgefoundry-v4";
+export const ENGINE_VERSION = "edgefoundry-v5";
 
 /**
  * One deterministic engine for replay and paper trading. Each block:
@@ -188,7 +189,7 @@ export class Engine {
     // The old quote can fill before its replacement; reserve for BOTH in that case.
     const restingBuy = this.active?.side === "buy" ? dec(this.active.remaining) : dec(0);
     const restingSell = this.active?.side === "sell" ? dec(this.active.remaining) : dec(0);
-    const feeMultiplier = dec(1).add(dec(this.header.costs.makerFeeBps).div(10_000));
+    const feeMultiplier = dec(1).add(dec(makerFee(this.header, this.previous!)).div(10_000));
     if (side === "buy") {
       const need = size.mul(price).add(restingBuy.mul(this.active?.price ?? 0)).mul(feeMultiplier).add(gasReserve);
       return l.mon.add(restingBuy).add(size).lte(this.config.maxPositionMon) && l.cash.gte(need);
@@ -204,7 +205,7 @@ export class Engine {
     l.gas(this.header.costs.gasLimit, f.gasPriceWei ?? this.header.costs.gasPriceWei, midOf(f));
     // Atomic cancel+place: a failed post-only placement leaves the old order intact.
     const crossing = p.side === "buy" ? dec(p.price!).gte(f.asks[0]![0]) : p.side === "sell" && dec(p.price!).lte(f.bids[0]![0]);
-    const fee = dec(1).add(dec(this.header.costs.makerFeeBps).div(10_000));
+    const fee = dec(1).add(dec(makerFee(this.header, this.previous!)).div(10_000));
     const funds = !p.side || (p.side === "buy" ? l.cash.gte(dec(p.size).mul(p.price!).mul(fee)) && l.mon.add(p.size).lte(this.config.maxPositionMon) : l.mon.gte(p.size));
     const cancelRace = p.cancelOrderBlock !== null && this.active?.placedBlock !== p.cancelOrderBlock;
     if (crossing || !funds || cancelRace) {
@@ -243,9 +244,9 @@ export class Engine {
       available = available.sub(used);
       if (available.lte(0)) continue;
       const qty = available.lt(o.remaining) ? available : dec(o.remaining);
-      this.ledger!.fill(o.side, qty.toString(), o.price, this.header.costs.makerFeeBps);
+      this.ledger!.fill(o.side, qty.toString(), o.price, makerFee(this.header, f));
       this.fills++;
-      this.fillQuality.add(f, o.side, o.price, qty.toString(), this.header.costs.makerFeeBps);
+      this.fillQuality.add(f, o.side, o.price, qty.toString(), makerFee(this.header, f));
       this.filledOrders.add(o.placedBlock);
       this.event({ block: f.block, type: "fill", side: o.side, price: o.price, size: qty.toString() });
       o.remaining = dec(o.remaining).sub(qty).toString();

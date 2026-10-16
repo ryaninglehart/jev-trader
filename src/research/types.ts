@@ -15,6 +15,8 @@ export interface Frame {
   asks: Level[];
   trades: { id: string; side: Side; price: string; size: string }[];
   gasPriceWei?: string;
+  /** Latest block-pinned public fee/size observation, retained with its age. */
+  marketCosts?: { observedBlock: number; makerFeeBps: string; takerFeeBps: string; minSizeMon: string };
   /** A decision made AFTER this block's observation. Never use future labels here. */
   decision?: {
     action: Side | "hold"; confidence: number; latencyMs: number; costUsd?: string;

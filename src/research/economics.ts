@@ -1,3 +1,4 @@
+import { makerFee } from "./execution-costs";
 import { dec } from "./ledger";
 import type { DatasetHeader, EconomicGateConfig, Frame, Side } from "./types";
 
@@ -9,8 +10,8 @@ export function economicEstimate(h: DatasetHeader, f: Frame, side: Side, price: 
   const notional = qty.mul(price);
   const capture = mid.sub(price).mul(sign).mul(qty);
   // A rebate is an assumption, but cannot create an otherwise uneconomic entry.
-  const entryFeeBps = dec(h.costs.makerFeeBps).gt(0) ? h.costs.makerFeeBps : "0";
-  const fees = notional.mul(dec(entryFeeBps).add(g.exitFeeBps)).div(10_000);
+  const entryFeeBps = dec(makerFee(h, f)).gt(0) ? makerFee(h, f) : "0";
+  const fees = notional.mul(dec(entryFeeBps).add(dec(g.exitFeeBps).gte(f.marketCosts?.takerFeeBps ?? "0") ? g.exitFeeBps : f.marketCosts!.takerFeeBps)).div(10_000);
   const adverse = qty.mul(mid).mul(g.adverseSelectionBps).div(10_000);
   const uncertainty = qty.mul(mid).mul(g.uncertaintyBps).div(10_000);
   const tx = dec(h.costs.gasLimit).mul(f.gasPriceWei ?? h.costs.gasPriceWei).div("1e18").mul(mid);

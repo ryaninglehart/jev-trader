@@ -1,6 +1,5 @@
 import { config as chainConfig } from "../src/config";
 import { rpc } from "../src/chain";
-import { Market } from "../src/market";
 import { log10, readBook } from "../src/book";
 import { TradeFeed } from "../src/trades";
 import { PaperSession } from "../src/research/session";
@@ -39,6 +38,8 @@ try {
   const blocks = Number(a.blocks ?? 1000);
   invariant(Number.isSafeInteger(blocks) && blocks >= 1 && blocks <= 1_000_000, "blocks must be 1..1000000");
   requestedBlocks = blocks;
+  // Defer the large venue SDK until credentials/settings have failed fast.
+  const { Market } = await import("../src/market");
   const market = new Market();
   await market.init(); // dry-run guard prevents deposits, approvals and transaction submission
   session = new PaperSession(a.state, header, config, jev ? { kind: "jev", path: resolve(a.state + ".jev.jsonl") } : undefined);

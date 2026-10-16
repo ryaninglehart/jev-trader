@@ -99,6 +99,12 @@ export function validateFrame(f: Frame, previous?: Frame) {
     amount(t.price, "trade price", true); amount(t.size, "trade size", true);
   }
   if (f.gasPriceWei !== undefined) amount(f.gasPriceWei, "frame gasPriceWei", true);
+  if (f.marketCosts) {
+    const m = f.marketCosts;
+    invariant(Number.isSafeInteger(m.observedBlock) && m.observedBlock > 0 && m.observedBlock <= f.block && f.block - m.observedBlock <= 200, "stale/future market cost observation");
+    amount(m.makerFeeBps, "observed maker fee"); amount(m.takerFeeBps, "observed taker fee"); amount(m.minSizeMon, "observed minimum size", true);
+    invariant(dec(m.makerFeeBps).lte(1000) && dec(m.takerFeeBps).lte(1000), "observed fees out of range");
+  }
   if (f.decision) {
     invariant(["hold", "buy", "sell"].includes(f.decision.action), "invalid decision");
     invariant(Number.isFinite(f.decision.confidence) && f.decision.confidence >= 0 && f.decision.confidence <= 1, "invalid confidence");

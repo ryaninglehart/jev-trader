@@ -117,6 +117,15 @@ Open inventory is **marked to mid, not liquidated**. Exit fees, price impact and
 
 The initial MON position is funded capital valued at the first observed mid. Simulated gas is purchased at each inclusion block's MON mid and charged against USD cash; this is an explicit reporting convention, not a representation of a real gas-wallet balance. No borrowing or short selling is modeled.
 
-Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `edgefoundry-v4`; older journals must be exported with their original version and replayed as datasets into a new session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
+Reports preserve dataset provenance, assumptions, selected settings, unresolved orders and risk halt reasons. The execution engine is now `edgefoundry-v5`; older journals must be exported with their original version and replayed as datasets into a new session. They cannot be silently resumed under changed execution semantics. Backtest output also includes a SHA-256 of the input file. The held-out test period must not be reused for strategy tuning. Collect new data for another evaluation.
 
 See [the research specification](SPEC.md) and [accounting and execution details](docs/METHODOLOGY.md) for limits and the live-enablement work still required.
+
+
+## Three-day forward study
+
+`DRY_RUN=true bun run study --state data/multiday/study.sqlite --out data/multiday/report.json` runs a fixed 72-hour canonical-market-time window. Use a frozen source checkout for the entire study. Restart the identical command to replay the disk journal and continue at the next block; never reset the journal to clear a loss stop. The collector imports no wallet or submission code. It records every finalized block, retrying gaps instead of skipping them. `--max-frames 120` is a bounded integration check, reported as interrupted rather than a completed three-day test.
+
+The main patient portfolio retains the gate. Six separately funded **diagnostic portfolios** test 5/15/60-minute inventory holds under full displayed queue and double-queue/double-gas assumptions. They explore eligible buy signals before the economic gate while preserving cash, position, loss and drawdown limits. They are not automatically approved strategies. See [the protocol](docs/MULTIDAY_STUDY.md).
+
+`bun run study --input recording.jsonl --out data/development.json` is an explicitly labeled development replay, not a new forward test. `bun run scripts/study-bundle.ts --base earlier-dashboard.json --study data/multiday/report.json --out data/dashboard.json` adds the study to the dashboard without removing past reports.

@@ -93,3 +93,10 @@ The dashboard accepts only EdgeFoundry comparison reports, escapes imported text
 ## EdgeFoundry v4
 
 V4 adds patient eligibility, independent signal-outcome diagnostics, touch-cost feasibility and depth-based exit estimates. It does not relax the gate or risk settings. Older journals remain tied to their original engine version; export observations and start a new v4 session. See [the strategy protocol](STRATEGY_RESEARCH.md) for the fixed hypotheses and evaluation roles.
+
+
+## EdgeFoundry v5
+
+V5 adds block-pinned public fee observations: positive maker/taker fees can raise cost accounting and gate reserves above declared floors. Missing observations in older datasets retain explicit assumptions. New observations must be no older than 200 blocks and cannot be from the future. The multi-day collector refuses changed tick/size precision or an order minimum above its fixed size. The journal engine version changes; v4 journals require their original engine, or export their observations for a new session.
+
+The long-holding research uses a separate, explicitly diagnostic portfolio model. It pays failed-entry and cancellation costs, models partial fills and delayed depth-based exits, and retains unresolved below-minimum inventory. Primary portfolio behavior is still governed by its economic gate. See MULTIDAY_STUDY.md for the experiment protocol.

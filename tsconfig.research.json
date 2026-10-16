@@ -11,6 +11,8 @@
     "scripts/make-fixture.ts",
     "scripts/compare-paper.ts",
     "scripts/compare-edgefoundry.ts",
-    "scripts/dashboard.ts"
+    "scripts/dashboard.ts",
+    "scripts/multiday.ts",
+    "scripts/study-bundle.ts"
   ]
 }

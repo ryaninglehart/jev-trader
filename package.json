@@ -30,6 +30,7 @@
     "demo": "bun run src/index.ts",
     "dev": "bun --watch run scripts/paper.ts",
     "edgefoundry:compare": "bun run scripts/compare-edgefoundry.ts",
-    "dashboard": "bun run scripts/dashboard.ts"
+    "dashboard": "bun run scripts/dashboard.ts",
+    "study": "bun run scripts/multiday.ts"
   }
 }

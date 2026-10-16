@@ -20,3 +20,4 @@ jobs:
       - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-paper-report.json
       - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-resumed-report.json
       - run: diff /tmp/jev-paper-report.json /tmp/jev-resumed-report.json
+      - run: bun run study --input fixtures/synthetic.jsonl --out /tmp/edgefoundry-holding-study.json
