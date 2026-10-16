@@ -13,6 +13,7 @@
     "scripts/compare-edgefoundry.ts",
     "scripts/dashboard.ts",
     "scripts/multiday.ts",
-    "scripts/study-bundle.ts"
+    "scripts/study-bundle.ts",
+    "scripts/cloud-study.ts"
   ]
 }
