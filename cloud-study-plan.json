@@ -1,0 +1,9 @@
+{
+  "repository": "ryaninglehart/jev-trader",
+  "releaseId": 415121212,
+  "seedName": "edgefoundry-cloud-cutover.efc",
+  "seedSha256": "fb86bc7dd5bc53343ed3ec9c0ebf18d69a56cca061885880a2c5d348d4cfed3f",
+  "namespace": "edgefoundry-20261016-72h",
+  "minimumBlock": 113927942,
+  "mode": "active"
+}

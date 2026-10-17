@@ -1,0 +1,23 @@
+name: Research checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.3"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test tests
+      - run: bun run backtest --input fixtures/synthetic.jsonl --out /tmp/jev-report.json
+      - run: bun run edgefoundry:compare --input fixtures/synthetic.jsonl --candidate edgefoundry.patient.example.json --reference edgefoundry.patient-v1.example.json --out /tmp/edgefoundry-comparison.json
+      - run: bun build dashboard/app.js --target browser --outdir /tmp/edgefoundry-dashboard
+      - run: bun run paper:compare --input fixtures/synthetic.jsonl --out /tmp/jev-comparison.json
+      - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-paper-report.json
+      - run: bun run paper:replay --input fixtures/synthetic.jsonl --state /tmp/jev-paper.jsonl --out /tmp/jev-resumed-report.json
+      - run: diff /tmp/jev-paper-report.json /tmp/jev-resumed-report.json
+      - run: bun run study --input fixtures/synthetic.jsonl --out /tmp/edgefoundry-holding-study.json

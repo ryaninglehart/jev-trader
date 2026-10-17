@@ -1,0 +1,10 @@
+import { readFileSync } from "node:fs";
+import { args, output, protectOutput } from "./research-args";
+import { invariant } from "../src/research/validation";
+const a = args(["base", "study", "out"]);
+invariant(a.base && a.study && a.out, "usage: bun run scripts/study-bundle.ts --base earlier-dashboard.json --study study.json --out dashboard.json");
+protectOutput(a.out, [a.base, a.study]);
+const base = JSON.parse(readFileSync(a.base, "utf8")), study = JSON.parse(readFileSync(a.study, "utf8"));
+invariant(base.schema === "edgefoundry-dashboard-v1" && study.schema === "edgefoundry-multiday-v1" && study.liveTradingEnabled === false, "invalid dashboard inputs");
+delete study.processId;
+output(a.out, { ...base, multiday: study });

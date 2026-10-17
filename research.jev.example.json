@@ -1,0 +1,22 @@
+{
+  "dataset": {
+    "kind": "dataset", "version": 1, "dataKind": "recorded",
+    "source": "Finalized Monad books and Kuru Trade logs with causally received Jev decisions; cost rates are simulation assumptions",
+    "market": "0x065C9d28E428A0db40191a54d33d5b7c71a9C394", "chainId": 143,
+    "blockMs": 300, "tickSize": "0.000001",
+    "costs": { "makerFeeBps": "0", "gasLimit": 350000, "gasPriceWei": "102000000000", "aiCostPerDecisionUsd": "0" }
+  },
+  "engine": {
+    "strategy": "recorded", "initialCashUsd": "100", "initialMon": "0",
+    "orderSizeMon": "200", "maxPositionMon": "1000", "maxLossUsd": "10",
+    "maxDrawdownPct": 10, "minConfidence": 0.6, "minSpreadBps": 2, "maxSpreadBps": 100,
+    "quoteInsideTicks": 1, "latencyBlocks": 1, "orderTtlBlocks": 5,
+    "decisionDeadlineMs": 750, "queueFactor": "1"
+  },
+  "jev": {
+    "modelId": "jev-latest", "horizonBlocks": 100, "timeoutMs": 2500,
+    "maxSignalAgeBlocks": 3, "requestEveryBlocks": 1, "maxRequests": 5000,
+    "maxEstimatedSpendUsd": "1", "unknownCostReserveUsd": "0.001",
+    "inputUsdPerMTok": "0.042", "outputUsdPerMTok": "0"
+  }
+}

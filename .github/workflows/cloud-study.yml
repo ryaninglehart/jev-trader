@@ -1,0 +1,63 @@
+name: Frozen EdgeFoundry paper study
+on:
+  push:
+    branches: [edgefoundry-cloud-preflight, edgefoundry-cloud-study]
+permissions:
+  contents: write
+concurrency:
+  group: edgefoundry-fixed-20261016-study
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/edgefoundry-cloud-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.3'
+          no-cache: true
+      - name: Prepare the identical frozen source and locked dependencies
+        run: |
+          mkdir frozen-runtime
+          git archive 098447cb730b6d68416f291d7534e2cf3fe85fac | tar -x -C frozen-runtime
+          cd frozen-runtime
+          bun --no-env-file install --frozen-lockfile --ignore-scripts
+      - name: Verify existing journal replay and public archive access
+        run: bun --no-env-file run scripts/cloud-study.ts preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EDGEFOUNDRY_CHECKPOINT_KEY: ${{ secrets.EDGEFOUNDRY_CHECKPOINT_KEY }}
+  study:
+    if: github.ref == 'refs/heads/edgefoundry-cloud-study'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        segment: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.3'
+          no-cache: true
+      - name: Prepare the identical frozen source and locked dependencies
+        run: |
+          mkdir frozen-runtime
+          git archive 098447cb730b6d68416f291d7534e2cf3fe85fac | tar -x -C frozen-runtime
+          cd frozen-runtime
+          bun --no-env-file install --frozen-lockfile --ignore-scripts
+      - name: Resume the original journal and preserve encrypted checkpoints
+        run: bun --no-env-file run scripts/cloud-study.ts segment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EDGEFOUNDRY_CHECKPOINT_KEY: ${{ secrets.EDGEFOUNDRY_CHECKPOINT_KEY }}
