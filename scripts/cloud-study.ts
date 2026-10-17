@@ -1,3 +1,4 @@
+import { collectorReportReady } from './cloud-startup';
 /** Cloud transport/supervision only. Never edits the frozen collector or its strategy. */
 import { Database } from "bun:sqlite";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
@@ -175,6 +176,7 @@ async function segment(plan: Plan, root: string, state: string, reportPath: stri
   if (remote.sequence === 0) invariant(readJson(reportPath).runStatus === "interrupted" && readJson(reportPath).lastBlock === remote.lastBlock, "initial cloud cutover requires the final stopped-writer report");
   const cleanEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin", DRY_RUN: "true" };
   const log = Bun.file(resolve(dirname(state), "collector.log"));
+  const collectorStartedAt = Date.now();
   const child = Bun.spawn([process.execPath, "--no-env-file", "run", "scripts/multiday.ts", "--state", state, "--out", reportPath], { cwd: root, env: cleanEnv, stdin: "ignore", stdout: log, stderr: log });
   let stopped = false; const stop = async () => {
     if (stopped) return; stopped = true;
@@ -199,10 +201,17 @@ async function segment(plan: Plan, root: string, state: string, reportPath: stri
     console.log(JSON.stringify({ checkpoint: remote.sequence, lastBlock: remote.lastBlock, status: report.runStatus, liveTradingEnabled: false }));
   };
   let interrupted = false; process.on("SIGTERM", () => { interrupted = true; }); process.on("SIGINT", () => { interrupted = true; });
-  const until = Date.now() + 270 * 60000; let nextSave = Date.now() + 60000;
+  const until = Date.now() + 270 * 60000; let nextSave = Date.now() + 60000, ownReportSeen = false;
   try {
     while (child.exitCode === null && Date.now() < until && !interrupted) {
       await Bun.sleep(5000);
+      // Restoring a growing journal can take more than one minute. Never
+      // checkpoint the prior runner's report while the frozen child replays.
+      if (!ownReportSeen) {
+        if (!collectorReportReady(readJson(reportPath), child.pid, collectorStartedAt, Date.now())) continue;
+        ownReportSeen = true; nextSave = Date.now();
+        console.log("Frozen collector startup replay finished; checkpointing its own current report.");
+      }
       if (Date.now() >= nextSave) { await checkpoint(); nextSave = Date.now() + 15 * 60000; }
     }
     await stop(); const report = readJson(reportPath);

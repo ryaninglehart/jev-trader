@@ -23,3 +23,9 @@ Free hosted runners have no uptime guarantee. An abrupt runner loss can require 
 The local chat heartbeat must inspect the cloud workflow and decrypt the latest checkpoint report once migration is active; it must not restart the retired Mac collector. Full restoration/replay is required for completion and after integrity concerns. Dashboard publication still uses the owner-private Sites workflow and saved snapshots; cloud collection continues independently while the Mac sleeps. Chat follow-ups and dashboard publication may wait until the app is available.
 
 GitHub documents standard hosted runners as free in public repositories and release assets as having no aggregate storage or bandwidth quota. The checked workflow uses no larger runners or billable artifact storage. Do not change the repository to private, raise a cache allowance, add a paid runner, publish the draft release, reset a journal or alter the frozen window as part of routine recovery.
+
+## Startup readiness after a growing journal replay
+
+The supervisor waits for the new collector to finish replay and write a report with its own PID and an updatedAt timestamp at or after subprocess launch. It checkpoints immediately once that report exists, then retains the fifteen-minute cadence. An inherited prior-runner report never counts as ready, even if a Linux PID is reused. Startup waiting is bounded at fifteen minutes; failure preserves all existing checkpoints for investigation. The 4.5-hour segment budget and original market-window end remain unchanged.
+
+This infrastructure-only guard fixes the one-minute initial checkpoint timer firing before a longer frozen-runtime replay. It changes no frozen source, market observation, strategy, costs, risk limits, journal identity or checkpoint format. The full seed and first 38 checkpoints were independently restored and replayed exactly through block 114044717 before recovery.
